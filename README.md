@@ -1,9 +1,15 @@
-Vision is an interpreted programming language that allows one to specify selenium tests using a subset of English.
+Vision is an interpreted language that allows one to specify selenium tests using a subset of English.
 
 * Vision tests are easier to read, since they are in English.  Those that do not know programming language can still read a Vision test.  While it is possible to make a Vision test hard for a non-programmer, it is also straightforward to make them easy to read.
 * Vision tests are easier to write and maintain.  The interactive interpreter allows for the test author to see if the command will do what he intended as he is writing it, rather than running the test and finding out then.
 * Vision tests are better documentation.
 * Vision does not support looping, functions, logical branching, or the general variable manipulation abilities of most programming languages.  This is intended, as a test should not have to alter behavior based on situations.  They should be step by step instructions.  If you need looping or branching in your tests, Vision is not for you.  You should consider a scripting language for selenium. 
+
+Example Vision script:
+    Navigate to "www.google.com"
+    Type "Behavior Driven Design" into the "Search" textfield
+    Click the "Search" button
+    Navigate to "http://github.com/mieweb/vision" 
 
 # Installation
 
