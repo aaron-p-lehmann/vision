@@ -94,12 +94,12 @@ class Typed(object):
 class Compileable(Typed):
     """
     Abstract class
-    """
 
-    # A mapping of token identifiers to functions that will compile them
-    # This mapping is part of the interface for the abstract Compileable, but the
-    # actual mappings must be provided by the compiler, NOT HERE.
-    # This is because this file is to be agnostic of the output format
+    A mapping of token identifiers to functions that will compile them
+    This mapping is part of the interface for the abstract Compileable, but the
+    actual mappings must be provided by the compiler, NOT HERE.
+    This is because this file is to be agnostic of the output format
+    """
     compiles = collections.defaultdict( lambda:
         lambda self: self.identifier )
 
@@ -115,13 +115,13 @@ class Compileable(Typed):
 class Interpretable(Typed):
     """
     Abstract class
-    """
 
-    # A mapping of token identifiers to functions that will interpret them
-    # This mapping is part of the interface for the abstract
-    # Interpretable, but the
-    # actual mappings must be provided by the interpreter, NOT HERE.
-    # This is because this file is to be agnostic of the output format
+    A mapping of token identifiers to functions that will interpret them
+    This mapping is part of the interface for the abstract
+    Interpretable, but the
+    actual mappings must be provided by the interpreter, NOT HERE.
+    This is because this file is to be agnostic of the output format
+    """
     interprets = collections.defaultdict( lambda:
         lambda self: self.identifier )
 
@@ -137,6 +137,12 @@ class Interpretable(Typed):
 class Parseable(Typed):
     """
     Abstract class
+
+    A mapping of token identifiers to functions that will run after
+    This mapping is part of the interface for the abstract
+    Interpretable, but the
+    actual mappings must be provided by the interpreter, NOT HERE.
+    This is because this file is to be agnostic of the output format
     """
 
     actions = collections.defaultdict( lambda:
@@ -631,7 +637,7 @@ class RelativePosition(InputPhrase):
 
 class FilteredValueObject(ValueObject):
     """
-    A ValueObject that can provide info on how ot filter elements
+    A ValueObject that can provide info on how to filter elements
     """
 
     def __init__(self, identifier, start, cant_have=(), must_have=(), place='selenium', token_type=None, use_parent_context_for_interpretation=True, filters=None):
@@ -772,7 +778,8 @@ class Noun(FilteredValueObject):
             return None
 
 class AttributeNoun(Noun):
-    """ Represents a Noun that was described by HTML attribute or XPATH
+    """
+    Represents a Noun that was described by HTML attribute or XPATH
     """
 
     # An AttributeNoun expects an Ordinal
@@ -995,7 +1002,7 @@ class OrdinalVerb(Verb):
 
 class Noop(Verb):
     """
-    Represents a Noop.  This is to be compiled to 'pass' in python...
+    Represents a Noop.
     """
     pass
 
@@ -1047,8 +1054,7 @@ class Skip(InputPhrase):
 
 class Command(InputPhrase):
     """
-    A command corresponds the active part of a line of code, the ScopeIndicators
-    and EOL are handled in the Line class
+    A command corresponds the active part of a line of code
     """
 
     # A command can have Objects, Subjects, and Verbs, in any order
