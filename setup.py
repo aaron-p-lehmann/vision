@@ -8,7 +8,7 @@ focuslibs = {
 
 setup(
     name='vision',
-    version='0.10.199',
+    version='0.10.200',
     packages=find_packages(),
 
     # This requires selenium
@@ -18,8 +18,8 @@ setup(
 
     # PyPI data
     author = "Aaron Lehmann",
-    author_email = "alehmann@mieweb.com",
-    license = "Closed",
+    author_email = "aaron.p.lehmann@gmail.com",
+    license = "MIT License <https://opensource.org/licenses/MIT>",
     description = "This is a language that allows selenium tests to be written using a subset of English.",
     keywords = "selenium",
     )

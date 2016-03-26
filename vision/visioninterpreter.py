@@ -63,35 +63,6 @@ def _displayed_filter(e, noun):
     result = e.is_displayed()
     return result
 
-"""
-Vision Compiler
-
-This sets up the compilation functions that turn the parse tree into
-Python.  It takes a parser object that is an iterable that yields
-Commands.
-
-It is an iterator.  Each iteration will yield the compiled result of an
-iteration of the parser it is given.  This means one can print the
-program Command by Command, like so:
-
-print compiler.compile().next()
-
-Or this, to output the compilation for the whole test script:
-
-for line in compiler.compile():
-    print line
-
-This should not know ANYTHING about the language used for input, that
-should be contained to the scanner.
-"""
-
-class Concept(visionparser.InputPhrase):
-    """
-    This doesn't do anything but make it convenient to write help topics
-    about the parts of Vision that aren't actually interpereted.
-    """
-    pass
-
 class InterpreterVerb(visionparser.Verb):
     """
     This is a Verb that is specific to the interpreter.  It doesn't
@@ -113,134 +84,11 @@ class InterpreterVerb(visionparser.Verb):
             self,
             type(self))
 
-class HelpVerb(InterpreterVerb):
-    # A HelpVerb expects and can adopt any InputPhrase
-    expected=(visionparser.InputPhrase,)
-    children=(visionparser.InputPhrase,)
-
-    # A HelpVerb cannot have more than one InputPhrase
-    cant_have={visionparser.InputPhrase:2}
-
-    def action(self):
-        self.command.type = 'help'
-
-    def consume(self, token):
-        # HelpVerb do not allow their children to parse, and they change
-        # the expectations of their command so that nothing else should
-        # come
-
-        # Note: Since consume is only called when a following token is
-        # found, when the HelpVerb appears alone this won't be done.
-        # But that's not necessary
-        self.command.expected = ()
-        self.handle_token(token)
-        return self.tokenstream
-
-    @property
-    def interpret(self):
-        if not hasattr( self, '_interpret' ):
-            help_string = """
-                Vision -- an interpretted language to make Selenium tests more easy to write
-
-                    Vision is a subset of English which can be interpretted to
-                    give commands to Selenium to drive a browser and write tests
-                    to exercise workflow.
-
-                    The Vision Language has few rules for scanning tokens.  They are:
-                        1)  The language is not case sensitive
-                        2)  The language seperates tokens by whitespace.  The
-                            ammount of whitespace is not significant.
-                        3)  The interactive version of the language indicates
-                            scope with the commands "Test" and "End Test".
-                        4)  The file-based version of the language indicates
-                            scope by the number of 4-space indentations ('    ')
-                            there are at the beginning of a line.
-                        5)  Leading and trailing whitespace is not significant
-                            in the interactive format of the language.  Trailing
-                            whitespace is not significant in the file-version of
-                            the language, nor is leading whitespace apart from
-                            indentations (e.g. nine spaces at the beginning of a
-                            line is interpreted as two indentations, the same as
-                            if there were eight spaces).
-                        6)  There is one Command per line.
-                        7)  Literal strings are set off by single quotes
-                            (').  Within Literal, single quotes can be
-                            escaped with backslashes (\\), and backslashes
-                            can be escaped with another backslash.
-
-                    There are many help topics that can be accessed through
-                    the online help.  They are divided into several groups,
-                    you can access the help for any of the kewyords in these
-                    groups by typing 'help <keyword':
-
-                    Vision Concepts:
-                        Command -- A Command represents one line of input
-                        Verb -- A Verb represents an action to be taken
-                            either in the interpreter or the browser
-                        Noun -- A Noun represents a widget on the screen
-                        Ordinal -- Ordinal numbers (1st, 2nd, 3rd, etc.)
-                        Subject -- A Subject is a group of Nouns and an
-                            optional Context used to find widgets on the
-                            screen
-                        Sugar -- A word that has no meaning in the language,
-                            but is allowed because it allows tests to read as
-                            English.
-                    Verbs:
-                        Break -- Breaks out of the MIE frameset
-                        Click -- Clicks on a widget
-                        Close -- Closes the driver and the browser
-                        End Test -- Indicates the end of one or many test
-                            scopes
-                        Load Test -- Loads a test from a file
-                        Navigate -- Navigates to a page
-                        Quit -- Ends the program
-                        Save Test -- Saves the test
-                        Select -- Selects a choice from a dropdown
-                        Show All Test -- Display all parsed commands with
-                            some useful information
-                        Show Test -- Display all commands that would be
-                            saved, if the test were saved right now
-                        Switch -- Switch the focus to anothe window
-                        Test -- Open up a new test scope
-                        Type -- Enters values in textfields, textareas, and
-                            codemirrors
-                    Nouns:
-                        Button -- An input with type of "button" or "submit"
-                            or a button element
-                        Checkbox -- An input with type of "checkbox"
-                        Codemirror -- A CodeMirror input
-                        Dropdown -- A select input
-                        Image -- An image tag
-                        Link -- An anchor tag
-                        Radiobutton -- An input with type of "radio"
-                        Row -- A tr element
-                        Table -- A table element
-                        Textarea -- A textarea element
-                        Textfield -- An input with type of "text" or
-                            password, or an input with no type at all
-                    Miscellaneous:
-                        The -- Indicates that a Nouns as coming and that
-                            if a Literal or Ordinal comes before then, they
-                            belong to it
-                        As -- Creates a Variable
-                        Context -- Uses a previously created variable as
-                            part of the Subject """
-            if self.children:
-                help_string = self.interprets[self.children[0].type]
-
-            def print_help(self, interpreter, ele):
-                print help_string
-                return True
-            self._interpret = types.MethodType(
-                print_help,
-                self,
-                type(self))
-        return self._interpret
-
 class InterpreterCommand(visionparser.Command):
     """
     This is a Command that doesn't consider commands that were errors or
-    removed in its history
+    removed in its history.  It will not be saved out to the file if the
+    test is saved, and it ignores whether the current scope is being skipped.
     """
 
     def __init__(self, scanner, lineno):
@@ -254,9 +102,8 @@ class InterpreterCommand(visionparser.Command):
         # By default, we assume a command exists because it was found in
         # its scanner, but scope ending commands can originate with
         # another scanner if they were injected as a result of a closing
-        # scope
-        # Default to being scanner; the scanner will change it if
-        # necessarY
+        # scope.  Default to being scanner; the scanner will change it if
+        # necessary
         self.origin_scanner = scanner
 
     def can_adopt(self, token):
@@ -273,7 +120,8 @@ class InterpreterCommand(visionparser.Command):
 class InteractiveVisionTokenizer(visionscanner.VisionTokenizer):
     """
     This is a VisionTokenizer for the version of Vision that is intended
-    to be interactively.
+    to be used interactively.  It includes commands like 'skip' and
+    'break'.
     """
     # We use InterpreterCommands
     commandtype = InterpreterCommand
@@ -315,7 +163,7 @@ class InteractiveVisionTokenizer(visionscanner.VisionTokenizer):
             if self is self.parser.subcommand_scanner and self.parser.children:
                 # This is a subcommand, set the origin scanner to be the
                 # one from the previous command that has a Verb that is
-                # not an InterpreterVerb or is "End, if there is one
+                # not an InterpreterVerb or is End, if there is one
                 try:
                     tokens[0].origin_scanner = next(
                         com.origin_scanner
@@ -362,7 +210,6 @@ class InteractiveVisionTokenizer(visionscanner.VisionTokenizer):
         tokens['end_test'] = [InterpreterVerb, {}]
         tokens['end_require'] = [InterpreterVerb, {}]
         tokens['set'] = [InterpreterVerb, {'must_have': (visionparser.Literal,)}]
-        tokens['help'] = [HelpVerb, {}]
         tokens['load_test'] = [InterpreterVerb, {}]
         tokens['run_test'] = [InterpreterVerb, {}]
         tokens['save_test'] = [InterpreterVerb, {'must_have': (visionparser.Literal,)}]
@@ -375,14 +222,6 @@ class InteractiveVisionTokenizer(visionscanner.VisionTokenizer):
         tokens['step_into_python'] = [InterpreterVerb, {'cant_have': (visionparser.Literal,)}]
         tokens['quit'] = [InterpreterVerb, {}]
         tokens['finish'] = [InterpreterVerb, {'cant_have':[visionparser.Literal]}]
-
-        # Concepts of Vision
-        tokens['noun'] = [Concept, {}]
-        tokens['verb'] = [Concept, {}]
-        tokens['subject'] = [Concept, {}]
-        tokens['ordinal'] = [Concept, {}]
-        tokens['command'] = [Concept, {}]
-        tokens['sugar'] = [Concept, {}]
 
         return tokens
 
@@ -709,7 +548,9 @@ class ScopeChange(visionparser.InputPhrase):
 
 class BasicVisionOutput(visionoutput.VisionOutput):
     """
-    Output handling for a command in a Vision session.
+    Output handling for a command in a Vision session.  This output is
+    for printing to the console, code for outputting to logfiles should
+    be done in another class.
     """
     def setup_outputs(self, outputs):
         outputs['file_literal'] = output_file_literal
@@ -762,10 +603,18 @@ def output_file_literal(token, output):
 
 class VisionInterpreter(object):
     """
-    This is a VERY thin wrapper around the VisionParser oject.  It's
-    there so that I can pass around a compiler object, for people that
-    like that sort of thing.
+    This sets up the compilation functions that turn the parse tree into
+    xpaths, which are used by Selenium to find elements on the page.
+    It also sets up functions that handle interpreting, by actually calling
+    selenium API.
+
+    It is an iterator.  Each iteration will interpret one parsed Command.
+
+    This should not know ANYTHING about the language used for input, that
+    should be contained to the scanner.  I have a feeling this last rule is
+    broken in some places...  This is an opportunity for improvement.
     """
+
 
     def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None):
         self.setup()
@@ -1183,451 +1032,6 @@ class VisionInterpreter(object):
         InterpreterVerb.interprets['quit'] = collections.defaultdict( lambda: interpret_quit )
         visionparser.Verb.interprets['go back'] = collections.defaultdict( lambda: interpret_go_back )
 
-        # Help strings
-        HelpVerb.interprets = {}
-        HelpVerb.interprets['break'] = """
-            Break [Literal] -- (Verb) Breaks out of the MIE frameset by putting
-                webdriver's focus on another frame.  If a Literal is
-                supplied, it focuses on that frame, otherwise if focuses
-                on "mainwindow" """
-
-        HelpVerb.interprets['button'] = """
-            Button [Literal] [Ordinal] -- (Noun) An input with type="button" or a
-                button.  If the Literal is supplied, it looks for a
-                button with a value of the Literal's, otherwise it gets
-                a button from the context.  If an Ordinal is provided,
-                it gets that one.  If an Ordinal is not provided, gets
-                the first button.
-
-                Examples:
-                    "button 'Save'" -- gets the first Save button
-                    "button 'Save' 2nd" -- gets the second Save button
-                    "button" -- gets the first button
-                    "button 2nd" -- gets the second button"""
-
-        #HelpVerb.interprets['capture'] = """
-        #    Capture [Literal] [Subject] -- (Verb) Takes a screenshot of the
-        #        Subject.  If no Subject is provided, takes a screenshot
-        #        fo the page.  The screenshot is named by Literal.  If
-        #        Literal is not provided, it is based on the filename of
-        #        the test.""",
-
-        HelpVerb.interprets['checkbox'] = """
-            Checkbox [Literal] [Ordinal] -- (Noun) An input with type="checkbox".
-                If the Literal is supplied, it looks for a checkbox with
-                a value of the Literal's, otherwise it gets a checkbox
-                from the context.  If an Ordinal is provided, it gets
-                that one.  If an Ordinal is not provided, gets the first
-                checkbox.
-
-                Examples:
-                    "checkbox 'Save'" -- gets the first Save checkbox
-                    "checkbox 'Save' 2nd" -- gets the second Save checkbox
-                    "checkbox" -- gets the first checkbox
-                    "checkbox 2nd" -- gets the second checkbox"""
-
-        HelpVerb.interprets['click'] = """
-            Click Subject -- (Verb) Clicks on the Subject."""
-
-        HelpVerb.interprets['close'] = """
-            Close -- (Verb) Closes the driver and the browser."""
-
-        HelpVerb.interprets['codemirror'] = """
-            Codemirror [Literal] [Ordinal] -- (Noun) A CodeMirror input
-                box.  This uses Javascript to get the codemirror.
-                Currently the only supported operation for it is
-                'type'.  It looks for element by finding the element
-                that whose preceding cell matches the Literal, or whose
-                column heading matches the Literal, or whose table
-                legend matches the Literal.  If no Literal is provided,
-                it gets the element indicated by the Ordinal, or the
-                first if no Ordinal is provided
-
-                Examples:
-                    "codemirror 'Layout'" -- gets the first Layout codemirror
-                    "codemirror 'Layout' 2nd" -- gets the second Layout codemirror
-                    "codemirror" -- gets the first codemirror
-                    "codemirror 2nd" -- gets the second codemirror"""
-
-        HelpVerb.interprets['dropdown'] = """
-            Dropdown [Literal] [Ordinal] -- (Noun) A select input
-                box.  It looks for element by finding the element
-                that whose preceding cell matches the Literal, or whose
-                column heading matches the Literal, or whose table
-                legend matches the Literal.  If no Literal is provided,
-                it gets the element indicated by the Ordinal, or the
-                first if no Ordinal is provided
-
-                Examples:
-                    "dropdown 'Layout'" -- gets the first Layout select
-                    "dropdown 'Layout' 2nd" -- gets the second Layout select
-                    "dropdown" -- gets the first select
-                    "dropdown 2nd" -- gets the second select"""
-
-        HelpVerb.interprets['end test'] = """
-            End Test [Literal] -- (Interpreter Verb) This is a command
-            to the interpreter that tells this is the end of a test
-            scope.  If a Literal is provided, it ends the scope with
-            a name matching the Literal, otherwise it ends the current
-            scope."""
-
-        HelpVerb.interprets['link'] = """
-            Link [Literal] [Ordinal] -- (Noun) A link input
-                box.  It looks for element by finding the element
-                that whose preceding cell matches the Literal, or whose
-                column heading matches the Literal, or whose table
-                legend matches the Literal.  If no Literal is provided,
-                it gets the element indicated by the Ordinal, or the
-                first if no Ordinal is provided
-
-                Examples:
-                    "link 'Layout'" -- gets the first Layout link
-                    "link 'Layout' 2nd" -- gets the second Layout link
-                    "link" -- gets the first link
-                    "link 2nd" -- gets the second link"""
-
-        HelpVerb.interprets['load test'] = """
-            Load Test [Literal] -- (Interpreter Verb) This is a command
-            to the interpreter that tells to load a test from a file and
-            interpret it, line by line, into the current parser.  The
-            file has a slightly different format, where scoping is
-            indicated by 4 space indents ('    ') and 'End Test' is not
-            permitted.  If an error occurs in this file, the driver
-            stop, as the test will be in an incorrect state."""
-
-        HelpVerb.interprets['navigate'] = """
-            Navigate Literal -- (Verb) Navigates to a page indicated by
-            Literal."""
-
-        #HelpVerb.interprets['nothing'] = """
-        #    Does nothing.  This is so that the file format has something
-        #    to put in for a Test that is to be filled in later.""",
-        HelpVerb.interprets['quit'] = """
-            Quit -- (Verb) Ends the program.  Control-C is a synonym for
-            this."""
-
-        HelpVerb.interprets['radio button'] = """
-            Radiobutton [Literal] [Ordinal] -- (Noun) An input with type="radio".
-                If the Literal is supplied, it looks for a radio with a
-                value of the Literal's, otherwise it gets a radio from
-                the context.  If an Ordinal is provided, it gets that
-                one.  If an Ordinal is not provided, gets the first
-                radio.
-
-                Examples:
-                    "radio button 'Save'" -- gets the first Save radio button
-                    "radio button 'Save' 2nd" -- gets the second Save radio button
-                    "radio button" -- gets the first radio button
-                    "radio button 2nd" -- gets the second radio button"""
-
-        HelpVerb.interprets['row'] = """
-            Row [Literal] [Ordinal] -- (Noun) A tr element.
-                If the Literal is supplied, it looks for a tr with a
-                string that starts with the Literal, otherwise it gets
-                a tr from the context.  If an Ordinal is provided, it
-                gets that one.  If an Ordinal is not provided, gets the
-                first tr.
-
-                Examples:
-                    "row 'Save'" -- gets the first row with a string
-                        starting with 'Save' in it
-                    "row 'Save' 2nd" -- gets the second row with a
-                        string starting with 'Save' in it
-                    "row" -- gets the first row
-                    "row 2nd" -- gets the second row"""
-
-        HelpVerb.interprets['save test'] = """
-            Save Test [Literal] -- (Interpreter Verb) Saves the
-                test to the file named in Literal.  If Literal is not
-                provided, saves to output.vision.  This will only save
-                commands that succeeded and have Verbs.  Commands that
-                failed or are directed to the Interpereter (such as this
-                one) are not saved out."""
-
-        HelpVerb.interprets['select'] = """
-            Select Literal -- (Verb) Selects the choice for Literal from
-                a dropdown."""
-
-        HelpVerb.interprets['show all test'] = """
-            Show All Test -- (Interpreter Verb) This displays all the
-                code that has been entered into the interpreter.  It
-                provides line number, whether the command is an error,
-                an interpreter command, whether the command has been
-                saved.  If the command is an error, the error message is
-                displayed.  This is the output of a variety of commands,
-                followed by 'Show all test':
-
-                    Vision Interpreter line 1:  Navigate 'www.google.com'
-                    Vision Interpreter line 2:  Click on the 'This is a valid command that will not work because there is no button named this' button
-                    list index out of range
-                    Vision Interpreter line 3:  This is not a valid command
-                    Parse failure at line 2, start 0 : "This" was not recognized
-                    Vision Interpreter line 3:  Show all test
-                    <interactive>:1|   Navigate 'www.google.com'
-                    <interactive>:2|  EClick on the 'This is a valid command that will not work because there is no button named this' button
-                            Error: list index out of range
-                    <interactive>:3|I  Show all test
-
-                Line 1 is a valid input that can be successfuly executed,
-                Line 2 is a valid input that cannot be successfully
-                    executed, and so it has an 'E' for error in its
-                    listing.
-                The first Line 3 of the test is not shown because it is
-                a tokenization error, and never got to the parser.
-                The second Line 3 of the test is an Interpreter Verb, as
-                    indicated by the 'I' for interpreter in its listing."""
-
-        HelpVerb.interprets['show test'] = """
-            Show Test -- (Interpreter Verb) This displays the code that
-                has been entered into the interpreter that ran correctly and
-                would be saved to a test.  It provides line number.
-                This is the output of a variety of commands, followed by
-                'Show test':
-
-                    Vision Interpreter line 1:  Navigate 'www.google.com'
-                    Vision Interpreter line 2:  Click on the 'This is a valid command that will not work because there is no button named this' button
-                        list index out of range
-                    Vision Interpreter line 3:  This is not a valid command
-                        Parse failure at line 2, start 0 : "This" was not recognized
-                    Vision Interpreter line 3:  Show all test
-                    ... redacted, for the output to this, type 'Help show all test'
-                    Vision Interpreter line 4:  Show test
-                    <interactive>:1|    Navigate 'www.google.com'
-
-                Line 1 is a valid input that can be successfuly executed
-                    and so is shown in the output of 'Show test',
-                Line 2 is a valid input that cannot be successfully
-                    executed, so is not shown
-                The first Line 3 of the test is not shown because it is
-                    a tokenization error, and never got to the parser.
-                The second Line 3 of the test is an Interpreter Verb, so
-                    is not shown
-                Line 4 is an Interpreter verb, and so is not shown. """
-
-        HelpVerb.interprets['switch'] = """
-            Switch Literal -- (Verb) This switches focus to the window
-                with a title matchingthe Literal.  If the Literal
-                matches the title of the current window, nothing is
-                done."""
-
-        HelpVerb.interprets['table'] = """
-            Table [Literal] [Ordinal] -- (Noun) A table element.
-                If the Literal is supplied, it looks for a table with a
-                legend with a string that starts with the Literal,
-                otherwise it gets a table from the context.  If an
-                Ordinal is provided, it gets that one.  If an Ordinal is
-                not provided, gets the first table.
-
-                Examples:
-                    "table 'Save'" -- gets the first table with a legend
-                        starting with 'Save' in it
-                    "table 'Save' 2nd" -- gets the second table with a
-                        legend starting with 'Save' in it
-                    "table" -- gets the first table
-                    "table 2nd" -- gets the second table"""
-
-        HelpVerb.interprets['test'] = """
-            Test Literal -- (Verb) This opens up
-                a new scope, and starts a logical part of the test.
-                The test's name is the Literal."""
-
-        HelpVerb.interprets['textarea'] = """
-            Textarea [Literal] [Ordinal] -- (Noun) A textarea element.
-                It looks for element by finding the element whose
-                preceding cell has a string starting with the Literal,
-                or whose column heading has a string starting with the
-                Literal, or whose table legend has a string starting
-                with the Literal.  If no Literal is provided it gets a
-                textarea from the context.  If an Ordinal is provided,
-                it gets that one.  If an Ordinal is not provided, gets
-                the first textarea.
-
-                Examples:
-                    "textarea 'Layout'" -- gets the first Layout textarea
-                    "textarea 'Layout' 2nd" -- gets the second Layout textarea
-                    "textarea" -- gets the first textarea
-                    "textarea 2nd" -- gets the second textarea"""
-
-        HelpVerb.interprets['image'] = """
-            Image [Literal] [Ordinal] -- (Noun) An image element.
-                It looks for element by finding the element whose
-                alt attribute starts with the Literal. If an Ordinal is
-                provided, it gets that one. If an Ordinal is not provided,
-                gets the first image.
-
-                Examples:
-                    "image 'View Help'" -- gets the first View Help applicable image
-                    "image 'View Help' 2nd" -- gets the second View Help applicable image
-                    "image" -- gets the first image
-                    "image 2nd" -- gets the second image"""
-
-        HelpVerb.interprets['textfield'] = """
-            Textfield [Literal] [Ordinal] -- (Noun) A input element with
-                @type="text" or @type="password" or no type provided.
-                It looks for element by finding the element whose
-                preceding cell has a string starting with the Literal,
-                or whose column heading has a string starting with the
-                Literal, or whose table legend has a string starting
-                with the Literal.  If no Literal is provided it gets a
-                input from the context.  If an Ordinal is provided,
-                it gets that one.  If an Ordinal is not provided, gets
-                the first input.
-
-                Examples:
-                    "textfield 'Layout'" -- gets the first Layout applicable input
-                    "textfield 'Layout' 2nd" -- gets the second Layout applicable input
-                    "textfield" -- gets the first applicable input
-                    "textfield 2nd" -- gets the second applicable input"""
-
-        HelpVerb.interprets['type'] = """
-            Type Literal -- (Verb) Sends keystrokes textfields or
-                textareas, and programmatically changes the text in a
-                codemirror element to the value of Literal."""
-
-        HelpVerb.interprets['the'] = """
-            The [Literal] [Ordinal] Noun -- (SubjectPartStart) This allows the Literal and Ordinal to be
-                placed before the Noun.
-
-                Examples:
-                    "the 'Save' button" is the same as "button 'Save'"
-                    "the 3rd button" is the same as "button 3rd"
-                    "the 3rd 'Save' button" is the same as "button 3rd 'Save'" """
-
-        HelpVerb.interprets['as'] = """
-            As Literal -- (Variable) Creates a Variable to mark a Subject for later
-                use as a Context in the scope.  The Variable will be
-                named by the Literal.
-
-                Example:
-                    "Click the 'Edit' button in the 2nd row of the 'User Locks' table as 'edit button'" will:
-                        1)  find the 'User Locks' table in the page
-                        2)  find the 2nd row in the table found in step 1
-                        3)  find the 'Edit' button in the row found in step 2
-                        4)  mark the Command as 'edit button'
-                        5)  perform the action necessary to click a
-                            button on the button found in step 3
-                    "Click the 'edit button' context" will then:
-                        1)  find the Command with the Variable 'edit
-                            button' (the Command that came first in the
-                            example)
-                        2)  perform steps 1-3 above
-                        3)  perforn the action necessary to click a
-                            button on the button found in step 2."""
-
-        HelpVerb.interprets['context'] = """
-            Context -- (Context) Uses a previously defined Variable as
-                the starting point to finding the Noun in this Command.
-                If the Command is part of a Test scope that defines a
-                Variable and no other Context is specified, the Context
-                of that Test will be used.
-
-                Example #1:
-                    "Click the 'Edit' button in the 2nd row of the 'User Locks' table as 'edit button'" will:
-                        1)  find the 'User Locks' table in the page
-                        2)  find the 2nd row in the table found in step 1
-                        3)  find the 'Edit' button in the row found in step 2
-                        4)  mark the Command as 'edit button'
-                        5)  perform the action necessary to click a
-                            button on the button found in step 3
-                    "Click the 'edit button' context" will then:
-                        1)  find the Command with the Variable 'edit
-                            button' (the Command that came first in the
-                            example)
-                        2)  perform steps 1-3 above
-                        3)  perforn the action necessary to click a
-                            button on the button found in step 2.
-                Example #2:
-                    "Test 'Edit User Locks' using the 'User Locks' table" will:
-                        1)  find the 'User Locks' table
-                        2)  mark the Command as 'user locks_table'
-                        3)  begin a new test scope
-                    "Click the 'Edit' button in the 2nd row" will then:
-                        1)  find the Command that has the Test
-                        2)  perform step 1 above to find the table
-                        3)  find the 2nd row in the table found in step 2
-                        4)  find the 'Edit' button in the row found in step 3
-                        5)  perform the action necessary to click a
-                            button on the button found in step 4"""
-
-        # Concepts of Vision
-        HelpVerb.interprets['noun'] = """
-            Noun [Literal] [Ordinal] -- (Concept) A Noun represents a widget on the screen,
-                such as a button or a textfield.  They can optionally be
-                associated with Literals and Ordinals"""
-
-        HelpVerb.interprets['verb'] = """
-            Verb [Literal] -- (Concept) A Verb represents an action to
-            be taken, either in the browser by Selenium, or in the
-            interpreter.  Examples of the former include click and type,
-            and examples of the latter include "save test" and "show
-            test".""",
-
-        HelpVerb.interprets['subject'] = """
-            Subject -- (Concept) A Subject is a group of Nouns and an
-                optional Context.  The interpreter will evaluate the
-                Context, if any, then the Nouns in reverse order to find
-                the widget that will be acted on.
-
-                Example:
-                    "Click the '-' button in the 2nd row of the 'User Locks' table" will:
-                        1)  find the 'User Locks' table in the page
-                        2)  find the 2nd row in the table found in step 1
-                        3)  find the '-' button in the row found in step 2
-                        4)  perform the action necessary to click a
-                            button on the button found in step 3""",
-
-        HelpVerb.interprets['command'] = """
-            Command -- (Concept) A Command represents one line of input
-                that is successfully scanned.  It contains one or more
-                Verbs, zero or more Nouns, zero or one Contexts, zero or
-                more Literals, zero or more SubjectPartStarts, zero or more
-                Ordinals, and zero or more Variables.
-
-                There are very few constraints on the order of the
-                tokens:
-                    1)  All Nouns must appear in reverse of how they'll
-                        be interpretted.  The need not appear together,
-                        however.
-                    2)  Literals must appear after the Verb, Noun,
-                        Context, or Variable they are associated with
-                        and before any other Literals, Verbs, Nouns,
-                        Contexts, or Variables.
-                    3)  Ordinals must appear after the Verb, Noun,
-                        Context, or Variable they are associated with
-                        and before any other Ordinals, Verbs, Nouns,
-                        Contexts, or Variables.
-                    4)  Rules 2 and 3 are altered after a SubjectPartStart.  In
-                        that case, a single Literal or Ordinal or both may
-                        appear between the SubjectPartStart and a Noun, and they
-                        will be associated with that Noun.
-
-                The following examples will all parse the same:
-                    "Click the 'Edit' button in the 2nd row of the 'edit table' context as 'edit button'"
-                    "Click the 'Edit' button in the 'edit table' context in the 2nd row as 'edit button'"
-                    "On the 'Edit' button in the 'edit table' context as 'exit button' in the 2nd row click"
-                    "Click button 'Edit' row 2nd context 'edit table' as 'edit button'" """
-
-        HelpVerb.interprets['ordinal'] = """
-            Ordinal -- (Concept) Ordinal numbers (1st, 2nd, 3rd, etc.)
-                can be used to indicate which Noun to use when there are
-                multiple options."""
-
-        HelpVerb.interprets['sugar'] = """
-            Sugar -- A word that has no meaning in the language,
-                but is allowed because it allows tests to read as
-                English.
-
-                The current defined sugar-words are:
-                    To
-                    In
-                    For
-                    With
-                    New
-                    Item
-                    From
-                    On
-                    Into"""
-
         # Parse actions
         visionparser.Verb.actions['switch'] = switch_action
         visionparser.Noun.actions['window'] = window_action
@@ -1644,8 +1048,8 @@ class VisionInterpreter(object):
 
     def scroll(self, x=0, y=0, ele=None):
         """
-        Scroll the given element to put it's upper left at the given
-        coord, in it's coordinate system.  If ele tests False, scroll the
+        Scroll the given element to put its upper left at the given
+        coord, in its coordinate system.  If ele tests False, scroll the
         current window.
         """
         x = max(x, 0)
@@ -1664,10 +1068,10 @@ class VisionInterpreter(object):
 
     def center_element(self, el, parent_el=None, horizontal=True, vertical=True):
         """
-        If given a webdriver element, arrange for it to be vertically
-        centered on the screen.  If necessary, scroll horizontally as
-        well.
-        
+        If given a webdriver element, arrange for it to be centered on
+        the screen.  There are horizontal and vertical flags that
+        indicate which axis on which to center.
+
         If the element has ancestor elements that are scrollable, it
         will do this recursively.
 
@@ -2863,12 +2267,6 @@ def skip_action(self):
     if not self.command.comment:
         self.command.must_have[visionparser.Comment] = 1
 
-    return []
-
-def help_verb_action(self):
-    self.command.type = 'help'
-    self.command.uses_elements = False
-    self.command.check_readyState = False
     return []
 
 def structure_commands_action(self, remove):

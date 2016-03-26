@@ -17,7 +17,7 @@ class VisionOutput(object):
         command (because it only cares about diffing the screenshot),
         and should be done here.
         4) Printing out the program listing because of a 'show test' is
-        essenscial to the command, and should be handled in
+        essencial to the command, and should be handled in
         interpretation, NOT HERE.
     """
 
