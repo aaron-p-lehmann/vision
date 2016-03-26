@@ -1,16 +1,16 @@
-Vision is an interpreted programming language that allows one to specify selenium tests using a subset of English.
-
-# FAQ
-
-## Why should I write my tests in Vision, rather than with one of the Selenium bindings?
+Vision is an interpreted language that allows one to specify selenium tests using a subset of English.
 
 * Vision tests are easier to read, since they are in English.  Those that do not know programming language can still read a Vision test.  While it is possible to make a Vision test hard for a non-programmer, it is also straightforward to make them easy to read.
 * Vision tests are easier to write and maintain.  The interactive interpreter allows for the test author to see if the command will do what he intended as he is writing it, rather than running the test and finding out then.
 * Vision tests are better documentation.
+* Vision does not support looping, functions, logical branching, or the general variable manipulation abilities of most programming languages.  This is intended, as a test should not have to alter behavior based on situations.  They should be step by step instructions.  If you need looping or branching in your tests, Vision is not for you.  You should consider a scripting language for selenium. 
 
-## Why should I write my tests in Python, rather than with Vision?
+Example Vision script:
 
-Vision does not support looping, functions, logical branching, or the general variable manipulation abilities of most programming languages.  This is intended, as a test should not have to alter behavior based on situations.  They should be step by step instructions.
+    Navigate to "www.google.com"
+    Type "Behavior Driven Design" into the "Search" textfield
+    Click the "Search" button
+    Navigate to "http://github.com/mieweb/vision" 
 
 # Installation
 
@@ -19,6 +19,7 @@ Vision requires Python 2.7 and pip.  I suggest using at least 2.7.9, so that you
 	pip install vision
 
 That will install Vision and its dependancies and make a binary in your path so you can treat Vision like any other program.	
+
 # Language Grammar and Important Concepts 
 
 This section will cover the grammar of the language and explain the various types of keywords.  There are six major types of keywords: Verbs, Nouns, Ordinals, Positionals, Sugar, and Variables.  Nouns and Verbs can be modified with Literals, Ordinals, and Positionals.  These are all organized into Commands.
@@ -136,7 +137,7 @@ Vision will search for a noun for a specific amount of time before giving up.  B
 
     Click the "Submit" button within "30"
 
-== Variable ==
+## Variable
 
 It is possible to label a command to allow the Noun part of it to be found later using the 'context' keyword. A variable is defined using the 'as' keyword.  So a Variable defined by this:
 
