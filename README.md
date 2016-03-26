@@ -6,6 +6,7 @@ Vision is an interpreted language that allows one to specify selenium tests usin
 * Vision does not support looping, functions, logical branching, or the general variable manipulation abilities of most programming languages.  This is intended, as a test should not have to alter behavior based on situations.  They should be step by step instructions.  If you need looping or branching in your tests, Vision is not for you.  You should consider a scripting language for selenium. 
 
 Example Vision script:
+
     Navigate to "www.google.com"
     Type "Behavior Driven Design" into the "Search" textfield
     Click the "Search" button
