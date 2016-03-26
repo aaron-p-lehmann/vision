@@ -3,18 +3,17 @@ from setuptools import setup, find_packages
 
 focuslibs = {
     'Windows': ['pypiwin32'],
-    'Linux': [],
 }
 
 setup(
     name='vision',
-    version='0.10.200',
+    version='0.10.205',
     packages=find_packages(),
 
     # This requires selenium
     install_requires = [
         'selenium',
-        'pillow'] + focuslibs[platform.system()],
+        'pillow'] + focuslibs.get(platform.system(), []),
 
     # PyPI data
     author = "Aaron Lehmann",
@@ -22,6 +21,10 @@ setup(
     license = "MIT License <https://opensource.org/licenses/MIT>",
     description = "This is a language that allows selenium tests to be written using a subset of English.",
     keywords = "selenium",
-    )
 
-
+    # Entry points
+    entry_points = {
+        'console_scripts': [
+        'vision = vision.vision:main']
+    }
+)
