@@ -84,12 +84,29 @@ can provide useful messages to those that are writing tests, rather than
 letting Python spew at them.
 """
 
+def get_subclasses(cl, found=None):
+    yield cl
+    found = found or set([])
+    for sub in (sc for sc in cl.__subclasses__() if sc not in found):
+        found.add(sub)
+        get_subclasses(sub, found)
+
 class Typed(object):
     def __init__(self, identifier, token_type=None):
         super(Typed, self).__init__()
         self.identifier=identifier
         if not hasattr(self, 'type'):
             self.type = token_type or identifier.lower().strip("'\"")
+
+    @classmethod
+    def add_callables(cls, callable_type, new_callables):
+        for cl in get_subclasses(cls):
+            getattr(cl, callable_type).update(new_callables)
+
+    @classmethod
+    def set_default(cls, callable_type, default):
+        for cl in get_subclasses(cls):
+            getattr(cl, callable_type).default_factory = lambda: default
 
 class Compileable(Typed):
     """
@@ -169,7 +186,7 @@ class Parseable(Typed):
 
     def parse(self, tokenstream):
         self.tokenstream = itertools.chain(tokenstream, getattr(self, 'tokenstream', []))
-        if not self.done:
+        while not self.done:
             try:
                 token = iter(self).next()
             except StopIteration, si:
@@ -369,12 +386,13 @@ class InputPhrase(Phrase):
     A Phrase that takes place inside a single input.
     """
 
-    def __init__(self, identifier, start=0, place='selenium', token_type=None ):
+    def __init__(self, identifier, start=0, place='selenium', token_type=None, scanner_args=None ):
+        scanner_args=scanner_args or {}
         super(InputPhrase, self).__init__(
             identifier=identifier,
             token_type=token_type)
         self.phrase_start = self.keyword_start = start
-        self.place = place
+        self.place=scanner_args.get('place', 'selenium')
 
     def __str__(self):
         return self.command.line[self.start:self.end]
@@ -394,7 +412,7 @@ class InputPhrase(Phrase):
 class Literal(InputPhrase):
     """ A literal is an arbitrary string. """
 
-    def __init__(self, identifier, start=0, place='selenium', token_type=None ):
+    def __init__(self, identifier, start=0, token_type=None, scanner_args=None):
         super(Literal, self).__init__(
             identifier=identifier,
             token_type=token_type,
@@ -433,13 +451,17 @@ class Literal(InputPhrase):
 class FileLiteral(Literal):
     """ A fileliteral is a literal that is gotten by openning the file named by the identifier string."""
 
-    def __init__(self, identifier, start=0, place='selenium', token_type=None ):
-        super(FileLiteral, self).__init__(identifier, start, place, token_type)
+    supported_types = {
+        'text': 'create_text_file',}
+
+    def __init__(self, identifier, start=0, token_type=None, scanner_args=None):
+        super(FileLiteral, self).__init__(identifier, start, token_type=token_type, scanner_args=scanner_args)
         self.type = 'file literal'
         self.created = False
         self.directory = None
         self.abs_path = None
         self.file_content = None
+        self.file_type = 'text'
 
     def __str__(self):
         if not self.file_content:
@@ -488,16 +510,7 @@ class FileLiteral(Literal):
                 choice = raw_input("(C)reate or (A)ccept?")
                 while not "accept".startswith(choice.strip().lower()):
                     if "create".startswith(choice.strip().lower()):
-                        # We're going to create a new file
-                        stopper = "<End of %s>" % filename
-                        content = ""
-                        for lineno in itertools.count(1):
-                            line = raw_input("Line %d of <%s>, type %s to stop input:    " % (lineno, self.abs_path, stopper))
-                            if line == stopper:
-                                break
-                            if content:
-                                content += "\n"
-                            content += line
+                        content = self.create_new_file()
                         if content:
                             self.file_content = content
                             self.created = True
@@ -517,6 +530,32 @@ class FileLiteral(Literal):
                 ve.ioe = ioe
                 raise ve
 
+    def create_text_file(self, fields=()):
+        # We're going to create a new file
+        stopper = "<End of %s>" % filename
+        content = ""
+        for lineno in itertools.count(1):
+            line = raw_input("Line %d of <%s>, type %s to stop input:    " % (lineno, self.abs_path, stopper))
+            if line == stopper:
+                break
+            if content:
+                content += "\n"
+            content += line
+        return content
+
+    @property
+    def file_type(self):
+        return self._file_type
+
+    @file_type.setter
+    def file_type(self, ftype):
+        ftype=ftype.lower()
+        self._file_type=ftype
+        self.create_new_file = getattr(
+            self,
+            self.supported_types.get(ftype, 'create_text_file'))
+        return ftype
+
 class Ordinal(InputPhrase):
     """ A ordinal tells which Node of a Nodeset returned by XPath to use. """
 
@@ -535,6 +574,26 @@ class Ordinal(InputPhrase):
     def identifier(self, value):
         self._identifier=value
         return value
+
+class RelativePosition(InputPhrase):
+    """
+    Represents a relative postion for a Noun.
+
+    For example:
+        The table after the "Allowed Physicians" text
+    """
+
+    expected = []
+    children=()
+    cant_have = {}
+    must_have = {}
+
+    def action(self):
+        if self.type == 'after':
+            self.parent.axis = 'following-sibling::*/descendant-or-self'
+        elif self.type == 'before':
+            self.parent.axis = 'preceding-sibling::*/descendant-or-self'
+        return []
 
 class ValueObject(InputPhrase):
     """
@@ -564,12 +623,18 @@ class ValueObject(InputPhrase):
     interprets = collections.defaultdict(
         lambda: lambda interpret, *args, **kwargs: None )
 
-    def __init__(self, identifier, start, cant_have=(), must_have=(), place='selenium', token_type=None):
+    def __init__(self, identifier, start, token_type=None, scanner_args=None):
+        scanner_args = scanner_args or {}
+        # Use those arguments to call super
         super(ValueObject, self).__init__(
             identifier=identifier,
             start=start,
-            place=place,
-            token_type=token_type)
+            token_type=token_type,
+            scanner_args=scanner_args)
+
+        # Get more arguments from the scanner
+        cant_have=scanner_args.get('cant_have', {})
+        must_have=scanner_args.get('must_have', {})
         self.cant_have = copy.deepcopy(self.cant_have)
         self.must_have = copy.deepcopy(self.must_have)
         if not hasattr(cant_have, 'keys'):
@@ -592,10 +657,10 @@ class ValueObject(InputPhrase):
                 # expected
                 self.expected.append(t)
 
-    def compile(self, target):
+    def compile(self):
         if not hasattr( self, '_compile' ):
             self._compile = types.MethodType(
-                self.compiles[target][self.type],
+                self.compiles[self.type],
                 self,
                 type(self))
         return self._compile()
@@ -615,40 +680,19 @@ class ValueObject(InputPhrase):
             lambda child: isinstance(child, Literal),
             self.children))
 
-class RelativePosition(InputPhrase):
-    """
-    Represents a relative postion for a Noun.
-
-    For example:
-        The table after the "Allowed Physicians" text
-    """
-
-    expected = []
-    children=()
-    cant_have = {}
-    must_have = {}
-
-    def action(self):
-        if self.type == 'after':
-            self.parent.axis = 'following-sibling::*/descendant-or-self'
-        elif self.type == 'before':
-            self.parent.axis = 'preceding-sibling::*/descendant-or-self'
-        return []
-
 class FilteredValueObject(ValueObject):
     """
     A ValueObject that can provide info on how to filter elements
     """
 
-    def __init__(self, identifier, start, cant_have=(), must_have=(), place='selenium', token_type=None, use_parent_context_for_interpretation=True, filters=None):
+    def __init__(self, identifier, start, cant_have=(), token_type=None, scanner_args=None):
+        scanner_args = scanner_args or {}
         super(FilteredValueObject, self).__init__(
             identifier,
             start,
-            cant_have=cant_have,
-            must_have=must_have,
-            place=place,
-            token_type=token_type)
-        self.filters = filters or []
+            token_type=token_type,
+            scanner_args=scanner_args)
+        self.filters = scanner_args.get('filters', [])
 
 class Noun(FilteredValueObject):
     """
@@ -678,20 +722,18 @@ class Noun(FilteredValueObject):
     readies = collections.defaultdict(
         lambda: lambda self, interpreter, ele: True)
 
-    def __init__(self, identifier, start, cant_have=(), must_have=(), place='selenium', token_type=None, use_parent_context_for_interpretation=True, filters=None):
+    def __init__(self, identifier, start, token_type=None, scanner_args=None):
+        scanner_args = scanner_args or {}
         super(Noun, self).__init__(
             identifier,
             start,
-            cant_have=cant_have,
-            must_have=must_have,
-            place=place,
             token_type=token_type,
-            filters=filters)
+            scanner_args=scanner_args)
         self._element = None
         self.id = None
         self.timing = collections.OrderedDict()
         self.axis = 'descendant'
-        self.use_parent_context_for_interpretation = use_parent_context_for_interpretation
+        self.use_parent_context_for_interpretation = scanner_args.get('use_parent_context_for_interpretation', True)
         self.window_handle = None
 
     @property
@@ -793,15 +835,13 @@ class AttributeNoun(Noun):
     interprets = collections.defaultdict(
         lambda: lambda interpret, *args, **kwargs: None )
 
-    def __init__(self, identifier, start, cant_have=(), must_have=(), place='selenium', token_type=None, use_parent_context_for_interpretation=True, filters=None):
+    def __init__(self, identifier, start, token_type=None, scanner_args=None):
+        scanner_args = scanner_args or {}
         super(AttributeNoun, self).__init__(
             'attributenoun',
             start,
-            cant_have=cant_have,
-            must_have=must_have,
-            place=place,
             token_type=token_type,
-            filters=filters)
+            scanner_args=scanner_args)
 
         method, means = identifier[1:-1].split("=", 1)
         method = method.lower()
@@ -828,6 +868,65 @@ class AttributeNoun(Noun):
         if self.method != 'xpath':
             xpath = "//node()[@%s='%s']" % (self.method, self.means)
         return (xpath,), ()
+
+class Context(ValueObject):
+    """
+    Represents Context of a command.
+    """
+    compiles = ValueObject.compiles.copy()
+    actions = ValueObject.actions.copy()
+    interprets = ValueObject.interprets.copy()
+
+    @property
+    def referent(self):
+        scope = 0
+        min_scope = 0
+        for command in self.command.commands_in_scope_iter:
+            if command.variable and str(command.variable.value) == str(self.value):
+                # This command defines the variable we use for
+                # context, get its subject
+                return command.subject
+        else:
+            # we're using a context that is undefined, raise an exception
+            raise visionexceptions.UndeclaredContextError(command=command)
+
+class SubjectPartStart(InputPhrase):
+    expected = [Literal, Ordinal, Noun, Context]
+    children=(Literal,Ordinal)
+    cant_have = {
+        Literal:2,
+        Ordinal:2,
+        Noun:2,
+        Context:2 }
+    must_have = {
+        Noun:1,
+        Context:1}
+
+    def parse(self, *args):
+        return super(SubjectPartStart, self).parse(*args)
+
+    def consume(self, token):
+        # If token is a Noun, push it, and any children we've gotten,
+        # back on to the stream and change it's phrase_start to the
+        # start of this token.
+        # The next time around, this'll fail the requirement of not
+        # getting more than 1 Noun, and it will return parsing control
+        # to the Command
+        if isinstance(token, (Noun, Context)):
+            del self.must_have[Context]
+            del self.must_have[Noun]
+            self.tokenstream = itertools.chain(
+                [token] + self.children,
+                self.tokenstream)
+            token.phrase_start = self.start
+            return self.tokenstream
+        return super(SubjectPartStart, self).consume(token)
+
+class ScopeChange(InputPhrase):
+    """
+    Marks the scope a line is on, one of these for each level of scope.
+    """
+    pass
 
 class Subject(Compileable, Interpretable):
     """
@@ -863,10 +962,10 @@ class Subject(Compileable, Interpretable):
         nouns = list(self.all_nouns if self.command.error else self.window_context_nouns)
         return ' in '.join(noun.code for noun in nouns)
 
-    def compile(self, target):
+    def compile(self):
         if not hasattr( self, '_compile' ):
             self._compile = types.MethodType(
-                self.compiles[target][self.type],
+                self.compiles[self.type],
                 self,
                 type(self))
         return self._compile()
@@ -932,27 +1031,6 @@ class Subject(Compileable, Interpretable):
         except StopIteration as si:
             return 'subject'
 
-class Context(ValueObject):
-    """
-    Represents Context of a command.
-    """
-    compiles = ValueObject.compiles.copy()
-    actions = ValueObject.actions.copy()
-    interprets = ValueObject.interprets.copy()
-
-    @property
-    def referent(self):
-        scope = 0
-        min_scope = 0
-        for command in self.command.commands_in_scope_iter:
-            if command.variable and str(command.variable.value) == str(self.value):
-                # This command defines the variable we use for
-                # context, get its subject
-                return command.subject
-        else:
-            # we're using a context that is undefined, raise an exception
-            raise visionexceptions.UndeclaredContextError(command=command)
-
 class Verb(FilteredValueObject):
     """
     Represents a Verb.  This doesn't behave any differently from any
@@ -962,9 +1040,10 @@ class Verb(FilteredValueObject):
     actions = ValueObject.actions.copy()
     interprets = ValueObject.interprets.copy()
 
-    def __init__(self, identifier, start, cant_have=(), must_have=(), timed=True, place='selenium', token_type=None, filters=None):
-        super(Verb, self).__init__(identifier, start, cant_have=cant_have, must_have=must_have, place='selenium', token_type=None,filters=filters)
-        self.timed=timed
+    def __init__(self, identifier, start, token_type=None, scanner_args=None):
+        scanner_args=scanner_args or {}
+        super(Verb, self).__init__(identifier, start, token_type=token_type, scanner_args=scanner_args)
+        self.timed=scanner_args.get('timed', True)
 
     @property
     def interpret(self):
@@ -976,6 +1055,28 @@ class Verb(FilteredValueObject):
     @property
     def usable(self):
         return not self.error or (not self.parser.interpreter.interactivity_enabled and self.type in ('require', 'test', 'validate'))
+
+class InterpreterVerb(Verb):
+    """
+    This is a Verb that is specific to the interpreter.  It doesn't
+    behave any differently from other Verbs, but is treated differently.
+    """
+    yieldable = False
+
+    compiles = Verb.compiles.copy()
+    actions = Verb.actions.copy()
+    interprets = Verb.interprets.copy()
+
+    @property
+    def usable(self):
+        return self.command.type == 'scope'
+
+    @property
+    def interpret(self):
+        return types.MethodType(
+            self.interprets[self.type][None],
+            self,
+            type(self))
 
 class OrdinalVerb(Verb):
     """
@@ -1016,7 +1117,14 @@ class Variable(ValueObject):
     actions = ValueObject.actions.copy()
     interprets = ValueObject.interprets.copy()
 
-class Comment(ValueObject):
+class CommandModifier(ValueObject):
+    """
+    A CommandModifier changes how the interpreter treats the command it
+    is a part of without changing the structure of the subject or the
+    meaning of the Verb.
+    """
+
+class Comment(CommandModifier):
     """
     Represents a comment.
     """
@@ -1028,7 +1136,18 @@ class Comment(ValueObject):
     # A Comment cannot have more than one Literal
     cant_have={Literal:2,}
 
-class Wait(ValueObject):
+class TemplateInjector(CommandModifier):
+    """
+    Loads a template into a 'Template Section' or 'Data Section's
+    template variable
+    """
+    # A TemplateInjector expects a Literal
+    expected=(Literal,)
+    children=(Literal,)
+
+    must_have={Literal:1,}
+
+class Wait(CommandModifier):
     """
     Represents the ammount of time the command must be completed within.
     """
@@ -1059,7 +1178,7 @@ class Command(InputPhrase):
 
     # A command can have Objects, Subjects, and Verbs, in any order
     # It can only have one of each kind of clause
-    expected=(Context, Noun, Verb, Variable, Noop, Comment, Wait, Skip)
+    expected=(Context, Noun, Verb, Variable, Noop, Comment, Wait, Skip, SubjectPartStart)
     children=(Context, Noun, Verb, Variable, Comment, Wait, Skip)
     must_have={Verb: 1}
     cant_have={
@@ -1072,7 +1191,7 @@ class Command(InputPhrase):
     compiles = collections.defaultdict( lambda: lambda compile, *args, **kwargs: None )
     interprets = collections.defaultdict( lambda: lambda interpret, *args, **kwargs: None )
 
-    def __init__(self, scanner, lineno, token_type=None):
+    def __init__(self, scanner, lineno, token_type=None, scanner_args=None):
         self.scopechange = 0
         self.lineno = lineno
         self.origin_scanner = self.scanner = scanner
@@ -1090,7 +1209,8 @@ class Command(InputPhrase):
 
         super(Command, self).__init__(
             identifier='command',
-            token_type='selenium')
+            token_type='selenium',
+            scanner_args=scanner_args or {})
 
     def get_variable_from_scope(self, var):
         # var is a string that is the name of the variable
@@ -1140,7 +1260,7 @@ class Command(InputPhrase):
         stream = [t for t in tokenstream]
         self.tokens = getattr(self, 'tokens', stream)
         self.tokenstream = iter(stream)
-        if not self.done:
+        while not self.done:
             token = iter(self).next()
         self.parsed = True
         return self.tokenstream
@@ -1168,6 +1288,8 @@ class Command(InputPhrase):
     def line(self):
         try:
             return self.scanner.lines[self.lineno - 1]['code'].strip()
+        except TypeError as te:
+            return self.scanner.lines[self.lineno - 1].strip()
         except:
             raise
 
@@ -1387,6 +1509,38 @@ class Command(InputPhrase):
             # doesn't know about what we just adopted.
             del self._subject
 
+class InterpreterCommand(Command):
+    """
+    This is a Command that doesn't consider commands that were errors or
+    removed in its history.  It will not be saved out to the file if the
+    test is saved, and it ignores whether the current scope is being skipped.
+    """
+
+    def __init__(self, scanner, lineno):
+        super(InterpreterCommand, self).__init__(scanner, lineno)
+        self.removed = False
+        self.error = False
+        self.vision_saved = []
+        self.scopechange = 0
+        self.timing = collections.OrderedDict()
+
+        # By default, we assume a command exists because it was found in
+        # its scanner, but scope ending commands can originate with
+        # another scanner if they were injected as a result of a closing
+        # scope.  Default to being scanner; the scanner will change it if
+        # necessary
+        self.origin_scanner = scanner
+
+    def can_adopt(self, token):
+        return super(InterpreterCommand, self).can_adopt(token) and getattr(token, 'adoptable', True)
+
+    @property
+    def code(self):
+        line = self.scanner.lines[self.lineno - 1]
+        try:
+            return line['code'].strip()
+        except TypeError as te:
+            return line.strip()
 
 class VisionParser(Phrase):
     """
