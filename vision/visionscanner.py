@@ -337,7 +337,7 @@ class VisionTokenizer(object):
         regexps.update({
             'attributenoun': """(?P<attributenoun>{([^}]|\\\\})+})""",
             'literal': """(?P<literal>"[^"]*"|'[^']*')""",
-            'fileliteral': r"""(?P<fileliteral><.+>)""",
+            'fileliteral': r"""(?P<fileliteral><[^>]+>)""",
             'punctuation': r"(?P<punctuation>([^\w'<>]|_))",
             'whitespace': r"(?P<whitespace>[ ]+)",
             'ordinalnumber': "(?P<ordinalnumber>%s)" % visionparser.Ordinal.regexp,

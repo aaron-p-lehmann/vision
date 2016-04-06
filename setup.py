@@ -7,7 +7,7 @@ focuslibs = {
 
 setup(
     name='vision',
-    version='0.10.205',
+    version='0.10.208',
     packages=find_packages(),
 
     # This requires selenium
