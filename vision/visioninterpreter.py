@@ -63,329 +63,11 @@ def _displayed_filter(e, noun):
     result = e.is_displayed()
     return result
 
-class InterpreterVerb(visionparser.Verb):
-    """
-    This is a Verb that is specific to the interpreter.  It doesn't
-    behave any differently from other Verbs, but is treated differently.
-    """
-    yieldable = False
-    actions = collections.defaultdict(
-        lambda: interpreter_verb_action)
-    interprets = collections.defaultdict( lambda: lambda interpret, *args, **kwargs: None )
-
-    @property
-    def usable(self):
-        return self.command.type == 'scope'
-
-    @property
-    def interpret(self):
-        return types.MethodType(
-            self.interprets[self.type][None],
-            self,
-            type(self))
-
-class InterpreterCommand(visionparser.Command):
-    """
-    This is a Command that doesn't consider commands that were errors or
-    removed in its history.  It will not be saved out to the file if the
-    test is saved, and it ignores whether the current scope is being skipped.
-    """
-
-    def __init__(self, scanner, lineno):
-        super(InterpreterCommand, self).__init__(scanner, lineno)
-        self.removed = False
-        self.error = False
-        self.vision_saved = []
-        self.scopechange = 0
-        self.timing = collections.OrderedDict()
-
-        # By default, we assume a command exists because it was found in
-        # its scanner, but scope ending commands can originate with
-        # another scanner if they were injected as a result of a closing
-        # scope.  Default to being scanner; the scanner will change it if
-        # necessary
-        self.origin_scanner = scanner
-
-    def can_adopt(self, token):
-        return super(InterpreterCommand, self).can_adopt(token) and getattr(token, 'adoptable', True)
-
-    @property
-    def code(self):
-        line = self.scanner.lines[self.lineno - 1]
-        try:
-            return line['code'].strip()
-        except TypeError as te:
-            return line.strip()
-
-class InteractiveVisionTokenizer(visionscanner.VisionTokenizer):
-    """
-    This is a VisionTokenizer for the version of Vision that is intended
-    to be used interactively.  It includes commands like 'skip' and
-    'break'.
-    """
-    # We use InterpreterCommands
-    commandtype = InterpreterCommand
-
-    def __init__(self, filish, name, subcommand=False, parser=None):
-        super(InteractiveVisionTokenizer, self).__init__(
-            filish=filish,
-            name=name,
-            parser=parser)
-        self.subcommand = subcommand
-        self._handle = None
-
-    def focus_on_command_prompt(self):
-        if platform.system() == "Windows":
-            import win32gui
-            import win32con
-            import pywintypes
-            try:
-                if self._handle:
-                    handle = win32gui.GetForegroundWindow()
-                    if handle != self._handle:
-                        win32gui.ShowWindow(self._handle,win32con.SW_SHOW)
-                        win32gui.SetForegroundWindow(self._handle)
-            except pywintypes.error as pwte:
-                pass
-
-    def get_handle(self):
-        if platform.system() == "Windows":
-            import win32gui
-            import pywintypes
-            try:
-                self._handle = win32gui.GetForegroundWindow()
-            except pywintypes.error as pwte:
-                pass
-
-    def next(self):
-        try:
-            tokens = super(InteractiveVisionTokenizer, self).next()
-            if self is self.parser.subcommand_scanner and self.parser.children:
-                # This is a subcommand, set the origin scanner to be the
-                # one from the previous command that has a Verb that is
-                # not an InterpreterVerb or is End, if there is one
-                try:
-                    tokens[0].origin_scanner = next(
-                        com.origin_scanner
-                        for com in reversed(self.parser.children)
-                        if com.verb and not isinstance(com.verb, InterpreterVerb))
-                except StopIteration as si:
-                    # there wasn't a previous command.
-                    pass
-        except StopIteration, si:
-            if not self.subcommand:
-                try:
-                    scopes = ['global']
-                    try:
-                        command = next(com for com in reversed(self.parser.children) if com.parsed and not com.error)
-                        scopes.extend(str(com.verb.value) for com in command.scopes)
-                        if command.scopechange > 0:
-                            # The most recent command opened a scope,
-                            # include it in the list
-                            scopes.append(str(command.verb.value))
-                        elif command.scopechange < 0:
-                            # The most recent command closed a scope,
-                            # cut the end of the scope list
-                            scopes = scopes[:command.scopechange]
-                    except StopIteration as si:
-                        pass
-                    self.focus_on_command_prompt()
-                    inp = raw_input( "%s:%d:  " % (
-                        scopes[-1],
-                        self.parser.number_of_lines + 1))
-                    self.get_handle()
-                except Exception, e:
-                    inp = 'quit'
-                self.addline(StringIO.StringIO(inp))
-                tokens = super(InteractiveVisionTokenizer, self).next()
-            else:
-                # If it's a subcommand, when we're done, we're done
-                raise
-        return tokens
-
-    def get_token_mapper(self):
-        tokens = super(InteractiveVisionTokenizer, self).get_token_mapper()
-
-        # Interactive specific
-        tokens['end_test'] = [InterpreterVerb, {}]
-        tokens['end_require'] = [InterpreterVerb, {}]
-        tokens['set'] = [InterpreterVerb, {'must_have': (visionparser.Literal,)}]
-        tokens['load_test'] = [InterpreterVerb, {}]
-        tokens['run_test'] = [InterpreterVerb, {}]
-        tokens['save_test'] = [InterpreterVerb, {'must_have': (visionparser.Literal,)}]
-        tokens['show_test'] = [InterpreterVerb, {}]
-        tokens['show_input'] = [InterpreterVerb, {}]
-        tokens['show_all_input'] = [InterpreterVerb, {}]
-        tokens['skip'] = [InterpreterVerb, {}]
-        tokens['next_command'] = [InterpreterVerb, {'cant_have': (visionparser.Literal,)}]
-        tokens['break'] = [InterpreterVerb, {'must_have': (visionparser.Literal,)}]
-        tokens['step_into_python'] = [InterpreterVerb, {'cant_have': (visionparser.Literal,)}]
-        tokens['quit'] = [InterpreterVerb, {}]
-        tokens['finish'] = [InterpreterVerb, {'cant_have':[visionparser.Literal]}]
-
-        return tokens
-
-class FileVisionTokenizer(visionscanner.VisionTokenizer):
-    """
-    This is a VisionTokenizer for the version of Vision that is loaded
-    from a file.
-    """
-
-    # These indicate the scope is changing when they are at the front of
-    # a line
-    scope_change = '    '
-
-    # Set up the special regexps
-    commandtype = InterpreterCommand
-
-    def __init__(self, filish, filename=None, parser=None):
-        file_name = filename or filish.name
-        file_data = filish.read()
-        super(FileVisionTokenizer, self).__init__(
-            StringIO.StringIO(file_data),
-            name=file_name,
-            parser=parser)
-        self.lines = [
-            {'breakpoint': False, 'code': line}
-            for line in self.lines]
-
-    def addline(self, newlines):
-        super(FileVisionTokenizer, self).addline(
-            {'breakpoint': False, 'code': line} for line in newlines)
-
-    def insertline(self, newlines):
-        super(FileVisionTokenizer, self).insertline(
-            {'breakpoint': False, 'code': line} for line in newlines)
-
-    def get_line(self):
-        line = tokens = None
-        while not tokens:
-            # read lines until we get one that isn't empty
-            # or just indents
-            line = super(FileVisionTokenizer, self).get_line()['code']
-            tokens = line.strip()
-
-        return line
-
-    def advance(self, lines=1, honor_breakpoints=True):
-        for x in range(lines):
-            self.lines[self.position]['breakpoint'] = False
-            self.position += 1
-
-    def rewind(self, lines=1):
-        self.position -= lines
-
-    def format_line(self, line):
-        if self.lines[self.position]['breakpoint'] and self.parser.interpreter.interactivity_enabled:
-            # We're moving to the next line and the interpreter supports interactive mode
-            self.lines[self.position]['breakpoint'] = False
-            raise StopIteration()
-        return super(FileVisionTokenizer, self).format_line(line)
-
-    def scanline(self, line, command):
-        tokens = super(FileVisionTokenizer, self).scanline(line, command)
-
-        # Handle all the indentation stuff
-        # Count the number of ScopeChanges at the front
-        scope_level = len(list(itertools.takewhile(
-            lambda tok:isinstance(tok, ScopeChange),
-            tokens)))
-
-        scopes = command.scopes
-        if scope_level > len(scopes):
-            # We've indented too far
-            raise visionexceptions.GarbageInputError(
-                code=line,
-                start=0,
-                message="Too many indents on line")
-
-        # Filter out any remaining ScopeChanges
-        tokens = [t for t in tokens if not isinstance(t, ScopeChange)]
-        if scope_level < len([scope for scope in scopes if scope.scanner is self]) and scope_level < len(scopes):
-            # This line is dedented from the rest of the file it's from
-            # and we haven't manually dedented,
-            # add an "end test" or "end request"
-
-            # Now we'll put a line ending the scope in the
-            # test that matches the indentation level of the line
-            scope = scopes[scope_level + (len(scopes) - len([scope for scope in scopes if scope.scanner is self]))]
-
-            label, scope_type = str(scope.verb.value), scope.verb.type
-            literal_marker = "'" if "'" not in label else '"'
-            line = "End %s %s%s%s" % (scope_type, literal_marker, label, literal_marker)
-            self.parser.subcommand_scanner.insertline(StringIO.StringIO(line))
-            self.parser.scanner = self.parser.subcommand_scanner
-
-            # raise StopIteration so that the parser can pull from
-            # the subcommand scanner
-            raise StopIteration()
-
-        return tokens
-
-    def get_regexps(self):
-        regexps = super(FileVisionTokenizer, self).get_regexps()
-        regexps['scope_change'] = '(?P<scope_change>%s)' % self.scope_change
-        regexps['whitespace'] = '(?P<whitespace>[ \n])'
-        return regexps
-
-    def get_token_mapper(self):
-        tokens = super(FileVisionTokenizer, self).get_token_mapper()
-        tokens['scope_change'] = [ScopeChange, {}]
-        tokens['interactive'] = [InterpreterVerb, {'cant_have':(visionparser.Literal,)}]
-        return tokens
-
-    def toggle_breakpoint(self, number=None):
-        number = (number - 1) if number else self.position
-        self.lines[number]['breakpoint'] = not self.lines[number]['breakpoint']
-
-    def toggle_token_breakpoint(self, token_type):
-        found = False
-        if "_".join(token_type.split()) in self.get_token_mapper():
-            # Toggle the breakpoint for each line with
-            # this kind of token, if there are any lines
-            for (i, line) in itertools.dropwhile(lambda pair, start=self.position: pair[0] < start, enumerate(self.lines)):
-                tokens, remainder = self.scanline_with_remainder(line['code'])
-                if not remainder and [tok for tok in tokens if tok.type == token_type]:
-                    self.toggle_breakpoint(i + 1)
-                    found = True
-            if not found:
-                raise visionexceptions.VisionException(
-                    message="'%s' does not contain token type '%s' after line %d" % (
-                        self.name,
-                        token_type,
-                        self.position))
-        else:
-            raise visionexceptions.VisionException(
-                message="'%s' is not an accepted token type in '%s'" % (
-                    token_type,
-                    self.name))
-
-    def token_match_action(self, token, line):
-        if not line.strip():
-            # Have't seen anything but spaces/tabs
-            if token == ' ':
-                # We've got bad indentation, raise GarbageInputError
-                raise visionexceptions.GarbageInputError(
-                    code=line,
-                    start=0,
-                    message="Improper indentation")
-        return True
-
-    @property
-    def scope_level(self):
-        for command in reversed(self.parser.children):
-            if command.usable and (command.scanner is self):
-                return len(list(itertools.takewhile(
-                    lambda tok:isinstance(tok, ScopeChange),
-                    self.scanline(self.lines[command.lineno - 1]))))
-        else:
-            return 0
-
 class InteractiveParser(visionparser.VisionParser):
     subcommand_scanner_name = '<subcommand>'
     interactive_scanner_name = '<interactive>'
 
-    def __init__(self, scanners=None, interactive_scanner_class=InteractiveVisionTokenizer, file_scanner_class=FileVisionTokenizer, interpreter=None):
+    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveTokenizer, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
         self.interactive_scanner_class=interactive_scanner_class
         self.file_scanner_class=file_scanner_class
         self.interpreter=interpreter
@@ -397,13 +79,13 @@ class InteractiveParser(visionparser.VisionParser):
             scanners = [scanners]
 
         self._subcommand_scanner = interactive_scanner_class(
-            filish=StringIO.StringIO(''),
             name=self.subcommand_scanner_name,
+            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
             subcommand=True,
             parser=self)
         interactive_scanner = interactive_scanner_class(
-            filish=StringIO.StringIO(''),
             name=self.interactive_scanner_name,
+            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
             parser=self)
         scanners = [self._subcommand_scanner, interactive_scanner] + scanners
         self.scanners = collections.OrderedDict()
@@ -434,7 +116,7 @@ class InteractiveParser(visionparser.VisionParser):
     def file_scanner(self):
         scanners = reversed(self.scanners.values())
         for scanner in scanners:
-            if isinstance(scanner, FileVisionTokenizer):
+            if isinstance(scanner, visionscanner.VisionFileScanner):
                 return scanner
         else:
             return None
@@ -442,7 +124,7 @@ class InteractiveParser(visionparser.VisionParser):
     @file_scanner.deleter
     def file_scanner(self):
         for key, scanner in self.scanners.items():
-            if isinstance(scanner, FileVisionTokenizer):
+            if isinstance(scanner, visionscanner.VisionFileScanner):
                 del self.scanners[key]
         return None
 
@@ -483,7 +165,7 @@ class InteractiveParser(visionparser.VisionParser):
 
         # Remove any breakpoints on the first line of the file if we're
         # switching from the interactive_scanner
-        if isinstance(scanner, FileVisionTokenizer) and old_scanner is self.interactive_scanner:
+        if isinstance(scanner, visionscanner.VisionFileScanner) and old_scanner is self.interactive_scanner:
             try:
                 scanner.lines[scanner.position]['breakpoint'] = False
             except IndexError as ie:
@@ -502,7 +184,7 @@ class InteractiveParser(visionparser.VisionParser):
         except StopIteration, si:
             # We may have exhausted the scanner, or we may
             # just need to change scanners
-            if isinstance(self.scanner, FileVisionTokenizer) and not self.scanner.done:
+            if isinstance(self.scanner, visionscanner.VisionFileScanner) and not self.scanner.done:
                 # We've hit a breakpoint.
                 if self.interpreter.interactivity_enabled:
                     # Set the scanner to interactive
@@ -516,7 +198,7 @@ class InteractiveParser(visionparser.VisionParser):
                     for name, scanner in reversed(self.scanners.items()):
                         if scanner.done:
                             # We've exhausted the scanner
-                            if isinstance(scanner,  FileVisionTokenizer):
+                            if isinstance(scanner, visionscanner.VisionFileScanner):
                                 # It's a file, remove it
                                 del self.scanners[name]
                         else:
@@ -539,12 +221,6 @@ class InteractiveParser(visionparser.VisionParser):
     def number_of_lines(self):
         # We don't count subcommands as lines
         return len([c for c in self.children if c.scanner.name != self.subcommand_scanner_name])
-
-class ScopeChange(visionparser.InputPhrase):
-    """
-    Marks the scope a line is on, one of these for each level of scope.
-    """
-    pass
 
 class BasicVisionOutput(visionoutput.VisionOutput):
     """
@@ -601,570 +277,6 @@ def output_file_literal(token, output):
                 print "Failed to write %s: %s" % (literal.abs_path, e)
     return True
 
-class VisionInterpreter(object):
-    """
-    This sets up the compilation functions that turn the parse tree into
-    xpaths, which are used by Selenium to find elements on the page.
-    It also sets up functions that handle interpreting, by actually calling
-    selenium API.
-
-    It is an iterator.  Each iteration will interpret one parsed Command.
-
-    This should not know ANYTHING about the language used for input, that
-    should be contained to the scanner.  I have a feeling this last rule is
-    broken in some places...  This is an opportunity for improvement.
-    """
-
-
-    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None):
-        self.setup()
-        self.step = False
-        self.acceptable_wait = acceptable_wait
-        self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait
-        self.default_output_file=default_output_file
-        self.outputters = outputters or [BasicVisionOutput(self)]
-        self.verbose = verbose
-        self.errorfound = False
-        self._handle = None
-        if not self.flags:
-            self.flags = collections.OrderedDict()
-
-    def __iter__(self):
-        return self
-
-    def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
-        maximum_wait = maximum_wait or command.wait
-        acceptable_wait = acceptable_wait or self.acceptable_wait
-        start = time.time()
-        ele = None
-
-        def ele_is_ready(driver):
-            el = function()
-            if el and (not hasattr(el, 'noun') or el.noun.ready):
-                return el
-            else:
-                return False
-
-        ele = ele_is_ready(self.webdriver) if expected else not ele_is_ready(self.webdriver)
-        end = time.time()
-        total = end - start
-        if total > acceptable_wait:
-            # We found the element within the maximum allowed time,
-            # so this isn't an error, but it took longer than it
-            # should have.  Log a warning
-            warning = None
-            warning = "Took %f seconds, expected no more than %f" % (total, acceptable_wait)
-            command.warnings.append( warning )
-
-        return ele
-
-    def handle_interpret_command_exception(self, ex, command):
-        command.error = ex
-        import traceback
-        command.trace = traceback.format_exc()
-        self.errorfound = True
-        self.executed = True
-        return False
-
-    def focus_on_browser(self):
-        # Make sure the OS is focused on our browser, so that
-        # focus/blur events work.
-        # This is Windows specific, but we'll fix that later, if need be
-        if platform.system() == "Windows":
-            alert = selenium.webdriver.common.alert.Alert(self.webdriver)
-            try:
-                alert.text
-                # There's an alert if we get here, so we can't get the
-                # webdriver title
-            except NoAlertPresentException as nape:
-                # there wasn't an alert, that means we can focus on the
-                # app
-
-                import pywintypes
-                import win32gui
-                import win32con
-                try:
-                    if not self._handle:
-                        top_windows = []
-                        win32gui.EnumWindows(
-                            lambda hwnd,
-                            top_windows:top_windows.append((hwnd, win32gui.GetWindowText(hwnd))), top_windows)
-                        windows = [win[0] for win in top_windows if str(self.webdriver.title) in win[1]]
-                        self._handle = windows[0]
-
-                    if win32gui.GetForegroundWindow() != self._handle:
-                        win32gui.ShowWindow(self._handle,win32con.SW_SHOW)
-                        win32gui.SetForegroundWindow(self._handle)
-                except pywintypes.error as pwte:
-                    pass
-
-    @property
-    def webdriver(self):
-        if not getattr( self, '_webdriver', None ):
-            p = webdriver.firefox.firefox_profile.FirefoxProfile()
-            p.native_events_enabled = False
-            p.set_preference('dom.max_script_run_time',60)
-            p.set_preference('dom.max_chrome_script_run_time',60)
-            p.set_preference('browser.download.folderList',2)
-            p.set_preference('browser.download.manager.showWhenStarting',False)
-            p.set_preference('webdriver_accept_untrusted_certs',True)
-            p.set_preference('webdriver_assume_untrusted_issuer',False)
-            p.set_preference('browser.download.dir', '.')
-            p.set_preference(
-                'browser.helperApps.neverAsk.saveToDisk',
-                ';'.join(['application/csv','application/octet-stream']))
-            self._webdriver = webdriver.Firefox(
-                firefox_profile=p,
-                firefox_binary=webdriver.firefox.firefox_binary.FirefoxBinary(
-                    firefox_path=None))
-        return self._webdriver
-
-    def compile(self):
-        return '\n'.join(l for l in self)
-
-    def handle_parse(self):
-        command = None
-        try:
-            command = self.parser.next()
-        except StopIteration:
-            # We don't want to catch StopIterations
-            raise
-        except Exception as e:
-            import traceback
-            print traceback.format_exc()
-
-            command = e.command
-            self.errorfound = True
-            if not isinstance(e, visionexceptions.VisionException):
-                e = visionexceptions.GarbageInputError(
-                    command=command,
-                    start=0,
-                    message="This is not valid Vision.")
-            command.error = e
-        command.executed = False
-        return command
-
-    def check_page_ready(self, command):
-        return self.webdriver.execute_script("return document.readyState == 'complete' || document.readyState == 'interactive';")
-
-    def handle_interpret(self, command):
-        ele = None
-
-        command.executed = True
-        try:
-            if command.check_readyState:
-                # If this is a command that cares whether we are ready,
-                # then verify that
-                ready = self.check_page_ready(command)
-                if ready:
-                    command.window_handle = self.webdriver.current_window_handle
-                else:
-                    # Tell the wait loop to wait and try again
-                    return False
-            return command.interpret(interpreter=self, ele=ele)
-        except UnexpectedAlertPresentException as uape:
-            raise
-        except WebDriverException as wde:
-            # We have a webdriverexception, so return false so we
-            # try again
-            return False
-        except visionexceptions.UnfoundElementError as uee:
-            # We couldn't find an element, so return false so we
-            # try again
-            return False
-        except Exception as e:
-            raise
-
-    def next(self):
-        stepped = False
-        if self.step and self.parser.file_scanner:
-            # We're supposed to step into python
-            stepped = True
-            self.parser.scanner = self.parser.file_scanner
-            self.step = False
-            import pdb;pdb.set_trace()
-
-        start = time.time()
-        try:
-            command = self.handle_parse()
-        except visionexceptions.VisionException as ve:
-            command.error = ve
-
-        skipscope = [scope for scope in command.scopes if scope.skip]
-        errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
-        is_to_the_interpreter = self.interactivity_enabled and not (command.error or command.skip) and isinstance(command.verb, InterpreterVerb)
-        if not errored_or_skipping or is_to_the_interpreter:
-            try:
-                # We parsed successfully and we are still executing commands
-                if is_to_the_interpreter or not command.verb.timed:
-                    # We don't want to time interpreter commands
-                    self.handle_interpret(command)
-                else:
-                    WebDriverWait(command, command.wait).until(self.handle_interpret)
-            except Exception as e:
-                self.handle_interpret_command_exception(e, command)
-        finish = time.time()
-
-        time_format = '(%f seconds)'
-        if stepped:
-            # Change the time format to indicate the timing might not be
-            # reliable
-            time_format += '; code was debugged, timing information might not be accurate'
-
-            if not isinstance(command.scanner, FileVisionTokenizer):
-                # We inserted a step before a command that caused
-                # subcommands to be added, so we need to keep stepping
-                self.step = True
-            else:
-                # Always finish a step in interactive mode
-                self.parser.scanner = self.parser.interactive_scanner
-
-        command.timing[command] = {
-            'format': time_format,
-            'total': finish - start
-        }
-        return command
-
-    def output(self, out):
-        for outputter in self.outputters:
-            outputter.output(out)
-
-    def handle_output(self, command):
-        try:
-            self.output(command)
-
-            # Rewind interpreter errors when interactivity is enabled and the scanner can be rewound
-            if command.error and self.interactivity_enabled:
-                supercommand = None
-                if command.origin_scanner is not command.scanner:
-                    try:
-                        supercommand = next(com for com in command.previous_commands_iter if com.scanner is com.origin_scanner)
-                    except StopIteration as si:
-                        # There's no supercommand
-                        pass
-                if command.executed and hasattr(command.origin_scanner, 'rewind') and (not supercommand or not supercommand.error):
-                    # We rewind the origin scanner, so that errors found
-                    # in generated subcommands can be recovered
-                    command.origin_scanner.rewind()
-                    command.origin_scanner.toggle_breakpoint()
-                if supercommand and supercommand.subcommands:
-                    # the most recent command from our origin
-                    # has subcommands.  This means that it's our
-                    # supercommand, rather than us having been
-                    # created by the parser (like because of a
-                    # dedention) It gets to have our error, too
-                    supercommand.error = command.error
-        except KeyboardInterrupt as ki:
-            raise
-        except Exception as e:
-            self.handle_interpret_command_exception(e, command)
-
-    def handle_commands(self):
-        code = ''
-        for command in self:
-            self.handle_output(command)
-        else:
-            self.parser.scanner = self.parser.interactive_scanner
-
-    def run(self):
-        exception = None
-        try:
-            first = True
-            while first or self.interactivity_enabled:
-                first = False
-                self.handle_commands()
-        except (Exception, KeyboardInterrupt) as e:
-            raise
-        finally:
-            self.quit()
-
-    def setup(self):
-        """
-        Tell each of the Compileables how we want them to be compiled in
-        different circumstances.  The compile method a particular object
-        will be determined at instanciation, once we know what kind it is.
-
-        For example, a Noun object that is of type 'button' will use
-        'compile_button_to_python'.
-        """
-        # This tells what to do when we get particular kinds of tokens
-        # Indicates which of a sequence of matching Nouns to use in an
-        # XPath
-        # Compilation methods (HTML)
-        InterpreterCommand.compiles['html'] = collections.defaultdict(
-            lambda: compile_command_to_html)
-
-        # Compilation methodes (XPath)
-        # These translate Nouns/Contexts/Subjects to strings
-        visionparser.Noun.compiles['xpath'] = collections.defaultdict(
-            lambda: compile_noun_to_xpath)
-        visionparser.Noun.compiles['xpath']['box']=compile_box_to_xpath
-        visionparser.Noun.compiles['xpath']['button']=compile_button_to_xpath
-        visionparser.Noun.compiles['xpath']['link']=functools.partial(compile_noun_to_xpath, tag='a', compare_type='link')
-        visionparser.Noun.compiles['xpath']['row']=compile_row_to_xpath
-        visionparser.Noun.compiles['xpath']['table']=compile_table_to_xpath
-        visionparser.Noun.compiles['xpath']['table body']=functools.partial(compile_simple_to_xpath, tag='tbody')
-        visionparser.Noun.compiles['xpath']['table header']=functools.partial(compile_simple_to_xpath, tag='thead')
-        visionparser.Noun.compiles['xpath']['table footer']=functools.partial(compile_simple_to_xpath, tag='tfoot')
-
-        # Labelled inputs
-        visionparser.Noun.compiles['xpath']['dropdown']=functools.partial(compile_noun_to_xpath, tag='select')
-        visionparser.Noun.compiles['xpath']['radio button']=functools.partial(compile_noun_to_xpath, tag='input[%s="radio"]' % case_insensitive("@type"), is_toggle=True)
-        visionparser.Noun.compiles['xpath']['checkbox']=functools.partial(compile_noun_to_xpath, tag='input[%s="checkbox"]' % case_insensitive("@type"), is_toggle=True)
-        visionparser.Noun.compiles['xpath']['textarea']=functools.partial(compile_noun_to_xpath, tag='textarea')
-        visionparser.Noun.compiles['xpath']['textfield']=compile_textfield_to_xpath
-        visionparser.Noun.compiles['xpath']['image']=compile_image_to_xpath
-        visionparser.Noun.compiles['xpath']['text']=functools.partial(compile_noun_to_xpath, compare_type='string')
-        visionparser.Noun.compiles['xpath']['file input']=functools.partial(compile_noun_to_xpath, tag='input[%s="file"]' % case_insensitive("@type"))
-
-        # Compiling subjects
-        visionparser.Subject.compiles['client'] = collections.defaultdict(
-            lambda: compile_subject_to_client)
-
-        # Mappings
-        # Interpretation methods
-        InterpreterCommand.interprets.default_factory = lambda: interpret_selenium_command
-
-        # Interpretation methods for Nouns
-        visionparser.Noun.interprets.default_factory = lambda: interpret_noun
-        visionparser.AttributeNoun.interprets.default_factory = lambda: interpret_attribute_noun
-        visionparser.Noun.interprets['alert'] = interpret_alert
-        visionparser.Noun.interprets['cell']= interpret_cell
-
-        # Contents methods for Nouns
-        visionparser.Noun.contents.default_factory = lambda: lambda noun:noun.element.text
-        visionparser.Noun.contents['button'] = lambda noun: noun.element.get_attribute('value') or noun.element.text
-        visionparser.Noun.contents['dropdown'] = lambda noun: selenium.webdriver.support.ui.Select(noun.element).all_selected_options
-        visionparser.Noun.contents['textfield'] = lambda noun: noun.element.get_attribute('value') or noun.element.get_attribute('placeholder')
-        visionparser.Noun.contents['textarea'] = lambda noun: noun.element.get_attribute('value') or noun.element.get_attribute('placeholder')
-
-        # Ready method for Nouns
-        visionparser.Noun.readies.default_factory = lambda: noun_ready
-
-        # Interpretation methods for Subjects
-        visionparser.Subject.interprets.default_factory = lambda: interpret_subject
-
-        # Interpretation methods for Verbs
-        visionparser.Verb.interprets.default_factory = lambda: interpret_verb
-        visionparser.Verb.interprets['accept'] = collections.defaultdict( lambda: interpret_accept )
-        visionparser.Verb.interprets['dismiss'] = collections.defaultdict( lambda: interpret_dismiss )
-        visionparser.Verb.interprets['authenticate'] = collections.defaultdict( lambda: interpret_authenticate )
-        visionparser.Verb.interprets['capture'] = collections.defaultdict( lambda: interpret_capture )
-        visionparser.Verb.interprets['click'] = collections.defaultdict( lambda: interpret_click )
-        visionparser.Verb.interprets['hover over'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_existence_check,
-                expected=True))
-        visionparser.Verb.interprets['clear'] = collections.defaultdict( lambda: interpret_clear )
-        visionparser.Verb.interprets['close'] = collections.defaultdict( lambda: interpret_close )
-        visionparser.Verb.interprets['push'] = collections.defaultdict( lambda: interpret_push )
-        visionparser.Verb.interprets['replace'] = collections.defaultdict( lambda: interpret_replace )
-        visionparser.Verb.interprets['enter file'] = collections.defaultdict( lambda: interpret_enter_file )
-        visionparser.Verb.interprets['should contain'] = collections.defaultdict( lambda: interpret_contains )
-        visionparser.Verb.interprets['should contain exactly'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_contains,
-                exact=True))
-        visionparser.Verb.interprets['should not contain'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_contains,
-                expected=False))
-        visionparser.Verb.interprets['should contain']['dropdown'] = interpret_contains_dropdown
-        visionparser.Verb.interprets['should contain exactly']['dropdown'] = functools.partial(
-                interpret_contains_dropdown,
-                exact=True)
-        visionparser.Verb.interprets['should not contain']['dropdown'] = functools.partial(
-                interpret_contains_dropdown,
-                expected=False)
-        visionparser.Verb.interprets['close']['alert'] = interpret_close_alert
-        visionparser.Verb.interprets['require'] = collections.defaultdict( lambda: interpret_require )
-        InterpreterVerb.interprets['set'] = collections.defaultdict( lambda: interpret_set )
-        InterpreterVerb.interprets['end test'] = collections.defaultdict( lambda: interpret_verb )
-        InterpreterVerb.interprets['end require'] = collections.defaultdict( lambda: interpret_verb )
-
-        InterpreterVerb.interprets['load test'] = collections.defaultdict( lambda: functools.partial(
-            interpret_load_test,
-            running=False))
-        InterpreterVerb.interprets['run test'] = collections.defaultdict( lambda: interpret_load_test )
-        InterpreterVerb.interprets['next command'] = collections.defaultdict( lambda: interpret_next_command )
-        InterpreterVerb.interprets['break'] = collections.defaultdict( lambda: interpret_break )
-        InterpreterVerb.interprets['step into python'] = collections.defaultdict( lambda: interpret_step_into_python )
-        InterpreterVerb.interprets['interactive'] = collections.defaultdict( lambda: interpret_interactive )
-        visionparser.Verb.interprets['navigate'] = collections.defaultdict( lambda: interpret_navigate )
-        visionparser.Verb.interprets['nothing'] = collections.defaultdict( lambda: interpret_nothing )
-        InterpreterVerb.interprets['save test'] = collections.defaultdict( lambda: interpret_save_test )
-        InterpreterVerb.interprets['finish'] = collections.defaultdict( lambda: interpret_finish )
-        visionparser.Verb.interprets['select'] = collections.defaultdict( lambda: interpret_select )
-        InterpreterVerb.interprets['show test'] = collections.defaultdict( lambda: functools.partial(interpret_show_test, getall=False) )
-        InterpreterVerb.interprets['show input'] = collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=False) )
-        InterpreterVerb.interprets['show all input'] = collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=True) )
-        InterpreterVerb.interprets['skip'] = collections.defaultdict( lambda: functools.partial(interpret_skip) )
-        visionparser.Verb.interprets['switch'] = collections.defaultdict( lambda: interpret_switch_to_default )
-        visionparser.Verb.interprets['switch']['default'] = interpret_switch_to_default
-        visionparser.Verb.interprets['switch']['frame'] = interpret_switch_to_frame
-        visionparser.Verb.interprets['switch']['window'] = interpret_switch_to_window
-        visionparser.Verb.interprets['test'] = collections.defaultdict( lambda: interpret_verb )
-        visionparser.Verb.interprets['type'] = collections.defaultdict( lambda: interpret_type )
-        visionparser.Verb.interprets['wait'] = collections.defaultdict( lambda: interpret_wait )
-        visionparser.Verb.interprets['should exist'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_existence_check,
-                expected=True))
-        visionparser.Verb.interprets['should not exist'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_existence_check,
-                expected=False))
-        visionparser.Verb.interprets['should exist']['alert'] = functools.partial(
-            interpret_existence_check_in_alert,
-            expected=True)
-        visionparser.Verb.interprets['should not exist']['alert'] = functools.partial(
-            interpret_existence_check_in_alert,
-            expected=False)
-        visionparser.Verb.interprets['should be checked'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_checked_check,
-                expected=True))
-        visionparser.Verb.interprets['should not be checked'] = collections.defaultdict(
-            lambda: functools.partial(
-                interpret_checked_check,
-                expected=False))
-        InterpreterVerb.interprets['quit'] = collections.defaultdict( lambda: interpret_quit )
-        visionparser.Verb.interprets['go back'] = collections.defaultdict( lambda: interpret_go_back )
-
-        # Parse actions
-        visionparser.Verb.actions['switch'] = switch_action
-        visionparser.Noun.actions['window'] = window_action
-        visionparser.Noun.actions['alert'] = alert_action
-        visionparser.Noun.actions['frame'] = frame_action
-        visionparser.Verb.actions['test'] = test_action
-        visionparser.Verb.actions['require'] = test_action
-        visionparser.Verb.actions['should exist'] = existence_action
-        visionparser.Verb.actions['should not exist'] = existence_action
-        visionparser.Skip.actions['is skipped'] = skip_action
-        InterpreterVerb.actions['end test'] = functools.partial(end_scope_action, matching_type='test')
-        InterpreterVerb.actions['end require'] = functools.partial(end_scope_action, matching_type='require')
-        visionparser.Command.actions.default_factory = lambda: command_action
-
-    def scroll(self, x=0, y=0, ele=None):
-        """
-        Scroll the given element to put its upper left at the given
-        coord, in its coordinate system.  If ele tests False, scroll the
-        current window.
-        """
-        x = max(x, 0)
-        y = max(y, 0)
-        if not ele:
-            self.webdriver.execute_script("window.scroll(arguments[0], arguments[1]);", x, y)
-        else:
-            self.webdriver.execute_script("""
-                arguments[0].scrollLeft = arguments[1];
-                arguments[0].scrollTop = arguments[2];""",
-                ele, x, y)
-
-    @property
-    def viewport(self):
-        return self.webdriver.execute_script("return {'width': window.innerWidth, 'height': window.innerHeight};")
-
-    def center_element(self, el, parent_el=None, horizontal=True, vertical=True):
-        """
-        If given a webdriver element, arrange for it to be centered on
-        the screen.  There are horizontal and vertical flags that
-        indicate which axis on which to center.
-
-        If the element has ancestor elements that are scrollable, it
-        will do this recursively.
-
-        el - the WebElement to center
-        parent_el - the parent WebElement in which to center el.  If
-        this is None, we find all ancestors, if False, we center inside
-        the window itself
-        """
-        if parent_el is None:
-            # We weren't given a parent, so we need to get all parents
-            # that have scrollbars
-            scroll_parents = self.webdriver.execute_script("""
-                var parent = arguments[0].parentNode;
-                var parents = [];
-                while(parent !== null && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html'){
-                    if(
-                    typeof(parent.scrollHeight) !== 'undefined' &&
-                        typeof(parent.scrollWidth) !== 'undefined' &&
-                        typeof(parent.clientHeight) !== 'undefined' &&
-                        typeof(parent.clientWidth) !== 'undefined'){
-                        // This node might have scrollbars
-                        var overflow_x = window.getComputedStyle(parent).getPropertyValue('overflow-y');
-                        var overflow_y = window.getComputedStyle(parent).getPropertyValue('overflow-x');
-                        if((overflow_x !== 'visible' && overflow_x !== 'hidden' && parent.scrollWidth > parent.clientWidth) ||
-                           (overflow_y !== 'visible' && overflow_y !== 'hidden' && parent.scrollHeight > parent.clientHeight))
-                        {
-                            // It does have scrollbars, keep it.
-                            parents.unshift(parent);
-                        }
-                    }
-                    parent = parent.parentNode;
-                }
-                return parents;""", el)
-            for parent, child in zip([False] + scroll_parents, scroll_parents + [el]):
-                self.center_element(child, parent, horizontal=horizontal, vertical=vertical)
-        else:
-            # Center inside the window
-            viewport = parent_el.size if parent_el else self.viewport
-            viewport_location = parent_el.location if parent_el else {'x': 0, 'y': 0}
-            middle = [el.location['x'] + el.size['width'] / 2 - viewport_location['x'], el.location['y'] + el.size['height'] / 2 - viewport_location['y']]
-            points = [max(0, middle[0] - viewport['width'] / 2), max(0, middle[1] - viewport['height'] / 2)]
-            if 0 < middle[0] < viewport['width']:
-                # we don't want to scroll horizontally if we don't have
-                # to
-                points[0] = 0
-            self.scroll(
-                x=points[0] if horizontal else self.webdriver.execute_script("return arguments[0].scrollLeft;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollX;"),
-                y=points[1] if vertical else self.webdriver.execute_script("return arguments[0].scrollTop;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollY;"),
-                ele=parent_el)
-
-    @property
-    def flags(self):
-        self.flags = getattr(self, '_flags', collections.OrderedDict())
-        return self._flags
-
-    @flags.setter
-    def flags(self, flags):
-        self._flags = flags
-
-    @property
-    def upload_dir(self):
-        return os.path.abs_path('upload')
-
-class InteractiveInterpreter(VisionInterpreter):
-    def quit(self):
-        self.parser.scanner = self.parser.interactive_scanner
-        self.interactivity_enabled = False
-
-        # Close off all the leftover scopes
-        commands = self.parser.children or []
-        scope = sum(command.scopechange for command in commands if command.usable)
-
-        # At this point, the only scanner we care about is the
-        # subcommand
-        self.parser.scanner = self.parser.subcommand_scanner
-
-        # Delete file scanners
-        for scannername, scanner in self.parser.scanners.items():
-            if scanner.name not in ('<interactive>', '<subcommand>'):
-                del self.parser.scanners[scannername]
-
-        # If there are scopes open, close them
-        if scope:
-            self.parser.subcommand_scanner.insertline([
-                "End %s" % command.verb.type for command in reversed(commands[-1].scopes)])
-            self.handle_commands()
-
-    def handle_output(self, command):
-        try:
-            super(InteractiveInterpreter, self).handle_output(command)
-        except KeyboardInterrupt as ki:
-            self.quit()
-
 def case_insensitive(leftside):
     return "translate(%s, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')" % leftside
 
@@ -1197,6 +309,7 @@ def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predi
                     "preceding-sibling" if is_toggle else "following-sibling",
                     base_axis or "descendant-or-self",
                     tag)
+
                 same_block = "./%s::*[%s]/%s::*/%s::%s" % (
                     self.axis,
                     precise_text_matcher,
@@ -1563,17 +676,17 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
         requesting_command.timing[self]['locator'] = 'id=%s' % self.id
         locator = functools.partial(
             locator_func,
-            filters=[_displayed_filter] + self.filters + self.command.verb.filters,
+            filters=[_displayed_filter] + self.filters + (self.command.verb.filters if self is next(self.command.subject.window_context_nouns) else []),
             noun=self,
             func=context_element.find_elements_by_id,
             finds=[self.id],
             nots=())
     else:
-        xpaths, nots = self.compile(target="xpath")
+        xpaths, nots = self.compile()
         requesting_command.timing[self]['locator'] = 'xpath=%s' % xpath
         locator = functools.partial(
             locator_func,
-            filters=[_displayed_filter] + self.filters  + self.command.verb.filters,
+            filters=[_displayed_filter] + self.filters  + (self.command.verb.filters if self is next(self.command.subject.window_context_nouns) else []),
             noun=self,
             func=context_element.find_elements_by_xpath,
             finds=xpaths,
@@ -1762,7 +875,16 @@ def interpret_clear(self, interpreter, ele):
     return True
 
 def interpret_click(self, interpreter, ele):
-    ele.click()
+    ws_style = False
+    try:
+        ele.click()
+    except WebDriverException as wde:
+        # Get around Selenium bug where links that are split over lines
+        # can't be clicked.
+        if ele.noun.type=='link':
+            interpreter.webdriver.execute_script(
+                "arguments[0].click();",
+                ele)
     return True
 
 def interpret_close(self, interpreter, ele):
@@ -1835,6 +957,7 @@ def interpret_load_test(self, interpreter, ele, running=True):
                     interpreter.parser.scanner = interpreter.parser.file_scanner_class(
                         filename=filename,
                         filish=testfile,
+                        scanner=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
                         parser=interpreter.parser)
             except IOError, ioe:
                 print "There was a problem loading the file '%s'" % abs
@@ -1990,7 +1113,7 @@ def interpret_show_input(self, interpreter, ele, getall):
     for (i, command) in enumerate(self.parser.children):
         status = ""
         suffix = ""
-        if isinstance(command.verb, InterpreterVerb):
+        if isinstance(command.verb, visionparser.InterpreterVerb):
             status += "I"
         else:
             status += " "
@@ -2170,7 +1293,7 @@ def interpret_set(self, interpreter, ele=None):
 def interpret_require(self, interpreter, ele=None):
     name = self.value.identifier.strip("'\"")
     if name not in interpreter.flags:
-        interpreter.parser.subcommand_scanner.insertline([
+        interpreter.parser.subcommand_scanner.addline([
             'Set "%s"' % name.rsplit('.', 1)[0],
             'Load test <%s>' % name ])
         self.command.url = interpreter.webdriver.current_url
@@ -2360,8 +1483,590 @@ def noun_ready(self, interpreter, ele):
     except:
         return False
 
+class VisionInterpreter(object):
+    """
+    This sets up the compilation functions that turn the parse tree into
+    xpaths, which are used by Selenium to find elements on the page.
+    It also sets up functions that handle interpreting, by actually calling
+    selenium API.
+
+    It is an iterator.  Each iteration will interpret one parsed Command.
+
+    This should not know ANYTHING about the language used for input, that
+    should be contained to the scanner.  I have a feeling this last rule is
+    broken in some places...  This is an opportunity for improvement.
+    """
+
+    # The callables the interpreter will use for the various activities
+    # on various tokens.  Since updating a Typed class also updates its
+    # subclasses, it's important that one order this from most general
+    # to most specific
+    defaults = collections.OrderedDict([
+        (visionparser.Command, {
+            'actions': command_action,
+        }),
+        (visionparser.InterpreterCommand, {
+            'interprets': interpret_selenium_command,
+        }),
+        (visionparser.Subject, {
+            'interprets': interpret_subject,
+        }),
+        (visionparser.Noun, {
+            'compiles': compile_noun_to_xpath,
+            'interprets': interpret_noun,
+            'readies': noun_ready,
+            'contents': lambda noun:noun.element.text,
+        }),
+        (visionparser.AttributeNoun, {
+            'interprets': interpret_attribute_noun,
+        }),
+        (visionparser.Verb, {
+            'interprets': interpret_verb,
+        }),
+        (visionparser.InterpreterVerb, {
+            'actions': interpreter_verb_action,
+        }),
+    ])
+    callables = collections.OrderedDict([
+        (visionparser.Noun, {
+            # post-parse actions
+            'actions': {
+                'window': window_action,
+                'alert': alert_action,
+                'frame': frame_action,
+            },
+            # compile Nouns to XPath
+            'compiles': {
+                'box': compile_box_to_xpath,
+                'button': compile_button_to_xpath,
+                'link': functools.partial(compile_noun_to_xpath, tag='a', compare_type='link'),
+                'row': compile_row_to_xpath,
+                'table': compile_table_to_xpath,
+                'table body': functools.partial(compile_simple_to_xpath, tag='tbody'),
+                'table header': functools.partial(compile_simple_to_xpath, tag='thead'),
+                'table footer': functools.partial(compile_simple_to_xpath, tag='tfoot'),
+                'dropdown': functools.partial(compile_noun_to_xpath, tag='select'),
+                'radio button': functools.partial(compile_noun_to_xpath, tag='input[%s="radio"]' % case_insensitive("@type"), is_toggle=True),
+                'checkbox': functools.partial(compile_noun_to_xpath, tag='input[%s="checkbox"]' % case_insensitive("@type"), is_toggle=True),
+                'textarea': functools.partial(compile_noun_to_xpath, tag='textarea'),
+                'textfield': compile_textfield_to_xpath,
+                'image': compile_image_to_xpath,
+                'text': functools.partial(compile_noun_to_xpath, compare_type='string'),
+                'file input': functools.partial(compile_noun_to_xpath, tag='input[%s="file"]' % case_insensitive("@type")),
+            },
+            # interpret via selenium to get WebElement
+            'interprets': {
+                'alert': interpret_alert,
+                'cell': interpret_cell,
+            },
+            # verify the element is ready after getting it
+            'readies': {
+            },
+            # verify the contents of an element
+            'contents': {
+                'button': lambda noun: noun.element.get_attribute('value') or noun.element.text,
+                'dropdown': lambda noun: selenium.webdriver.support.ui.Select(noun.element).all_selected_options,
+                'textfield': lambda noun: noun.element.get_attribute('value') or noun.element.get_attribute('placeholder'),
+                'textarea': lambda noun: noun.element.get_attribute('value') or noun.element.get_attribute('placeholder'),
+            },
+        }),
+        (visionparser.Verb, {
+            'actions': {
+                'switch': switch_action,
+                'test': test_action,
+                'require': test_action,
+                'should exist': existence_action,
+                'should not exist': existence_action,
+            },
+            'interprets': {
+                'accept': collections.defaultdict( lambda: interpret_accept ),
+                'dismiss': collections.defaultdict( lambda: interpret_dismiss ),
+                'authenticate': collections.defaultdict( lambda: interpret_authenticate ),
+                'capture': collections.defaultdict( lambda: interpret_capture ),
+                'click': collections.defaultdict( lambda: interpret_click ),
+                'hover over': collections.defaultdict( lambda: functools.partial(
+                    interpret_existence_check,
+                    expected=True)),
+                'clear': collections.defaultdict( lambda: interpret_clear ),
+                'close': collections.defaultdict(
+                    lambda: interpret_close, {
+                        'alert': interpret_close_alert,
+                    }),
+                'push': collections.defaultdict( lambda: interpret_push ),
+                'replace': collections.defaultdict( lambda: interpret_replace ),
+                'enter file': collections.defaultdict( lambda: interpret_enter_file ),
+                'should contain': collections.defaultdict( 
+                    lambda: interpret_contains, {
+                        'dropdown': interpret_contains_dropdown,
+                    }),
+                'should contain exactly': collections.defaultdict(
+                    lambda: functools.partial(interpret_contains, exact=True), {
+                        'dropdown': functools.partial(interpret_contains_dropdown, exact=True),
+                    }),
+                'should not contain': collections.defaultdict(
+                    lambda: functools.partial(interpret_contains, expected=False), {
+                        'dropdown': functools.partial(interpret_contains_dropdown, expected=False),
+                    }),
+                'require': collections.defaultdict( lambda: interpret_require ),
+                'navigate': collections.defaultdict( lambda: interpret_navigate ),
+                'nothing': collections.defaultdict( lambda: interpret_nothing ),
+                'select': collections.defaultdict( lambda: interpret_select ),
+                'switch': collections.defaultdict(
+                    lambda: interpret_switch_to_default, {
+                        'default': interpret_switch_to_default,
+                        'frame': interpret_switch_to_frame,
+                        'window': interpret_switch_to_window,
+                    }),
+                'test': collections.defaultdict( lambda: interpret_verb ),
+                'type': collections.defaultdict( lambda: interpret_type ),
+                'wait': collections.defaultdict( lambda: interpret_wait ),
+                'should exist': collections.defaultdict( lambda: functools.partial(
+                    interpret_existence_check,
+                    expected=True), {
+                        'alert': functools.partial(interpret_existence_check_in_alert, expected=True),
+                    }),
+                'should not exist': collections.defaultdict( lambda: functools.partial(
+                    interpret_existence_check,
+                    expected=False), {
+                        'alert': functools.partial(interpret_existence_check_in_alert, expected=True),
+                    }),
+                'should be checked': collections.defaultdict( lambda: functools.partial(
+                    interpret_checked_check,
+                    expected=True)),
+                'should not be checked': collections.defaultdict( lambda: functools.partial(
+                    interpret_checked_check,
+                    expected=False)),
+                'go back': collections.defaultdict( lambda: interpret_go_back ),
+            },
+        }),
+        (visionparser.InterpreterVerb, {
+            'actions': {
+                'end test': functools.partial(end_scope_action, matching_type='test'),
+                'end require': functools.partial(end_scope_action, matching_type='require'),
+            },
+            'interprets': {
+                'set': collections.defaultdict( lambda: interpret_set ),
+                'end test': collections.defaultdict( lambda: interpret_verb ),
+                'end require': collections.defaultdict( lambda: interpret_verb ),
+                'load test': collections.defaultdict( lambda: functools.partial(interpret_load_test, running=False)),
+                'run test': collections.defaultdict( lambda: interpret_load_test ),
+                'next command': collections.defaultdict( lambda: interpret_next_command ),
+                'break': collections.defaultdict( lambda: interpret_break ),
+                'step into python': collections.defaultdict( lambda: interpret_step_into_python ),
+                'interactive': collections.defaultdict( lambda: interpret_interactive ),
+                'save test': collections.defaultdict( lambda: interpret_save_test ),
+                'finish': collections.defaultdict( lambda: interpret_finish ),
+                'show test': collections.defaultdict( lambda: functools.partial(interpret_show_test, getall=False) ),
+                'show input': collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=False) ),
+                'show all input': collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=True) ),
+                'skip': collections.defaultdict( lambda: functools.partial(interpret_skip) ),
+                'quit': collections.defaultdict( lambda: interpret_quit ),
+            },
+        }),
+        (visionparser.Skip, {
+            'actions': {
+                'is skipped': skip_action,
+            },
+        }),
+    ])
+
+    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None):
+        self.setup(mycls=VisionInterpreter)
+        self.step = False
+        self.acceptable_wait = acceptable_wait
+        self.interactivity_enabled = True
+        self.maximum_wait = maximum_wait
+        self.default_output_file=default_output_file
+        self.outputters = outputters or [BasicVisionOutput(self)]
+        self.verbose = verbose
+        self.errorfound = False
+        self._handle = None
+        if not self.flags:
+            self.flags = collections.OrderedDict()
+
+    def __iter__(self):
+        return self
+
+    def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
+        maximum_wait = maximum_wait or command.wait
+        acceptable_wait = acceptable_wait or self.acceptable_wait
+        start = time.time()
+        ele = None
+
+        def ele_is_ready(driver):
+            el = function()
+            if el and (not hasattr(el, 'noun') or el.noun.ready):
+                return el
+            else:
+                return False
+
+        ele = ele_is_ready(self.webdriver) if expected else not ele_is_ready(self.webdriver)
+        end = time.time()
+        total = end - start
+        if total > acceptable_wait:
+            # We found the element within the maximum allowed time,
+            # so this isn't an error, but it took longer than it
+            # should have.  Log a warning
+            warning = None
+            warning = "Took %f seconds, expected no more than %f" % (total, acceptable_wait)
+            command.warnings.append( warning )
+
+        return ele
+
+    def handle_interpret_command_exception(self, ex, command):
+        command.error = ex
+        import traceback
+        command.trace = traceback.format_exc()
+        self.errorfound = True
+        self.executed = True
+        return False
+
+    def focus_on_browser(self):
+        # Make sure the OS is focused on our browser, so that
+        # focus/blur events work.
+        # This is Windows specific, but we'll fix that later, if need be
+        if platform.system() == "Windows":
+            alert = selenium.webdriver.common.alert.Alert(self.webdriver)
+            try:
+                alert.text
+                # There's an alert if we get here, so we can't get the
+                # webdriver title
+            except NoAlertPresentException as nape:
+                # there wasn't an alert, that means we can focus on the
+                # app
+
+                import pywintypes
+                import win32gui
+                import win32con
+                try:
+                    if not self._handle:
+                        top_windows = []
+                        win32gui.EnumWindows(
+                            lambda hwnd,
+                            top_windows:top_windows.append((hwnd, win32gui.GetWindowText(hwnd))), top_windows)
+                        windows = [win[0] for win in top_windows if str(self.webdriver.title) in win[1]]
+                        self._handle = windows[0]
+
+                    if win32gui.GetForegroundWindow() != self._handle:
+                        win32gui.ShowWindow(self._handle,win32con.SW_SHOW)
+                        win32gui.SetForegroundWindow(self._handle)
+                except pywintypes.error as pwte:
+                    pass
+
+    @property
+    def webdriver(self):
+        if not getattr( self, '_webdriver', None ):
+            p = webdriver.firefox.firefox_profile.FirefoxProfile()
+            p.native_events_enabled = False
+            p.set_preference('dom.max_script_run_time',60)
+            p.set_preference('dom.max_chrome_script_run_time',60)
+            p.set_preference('browser.download.folderList',2)
+            p.set_preference('browser.download.manager.showWhenStarting',False)
+            p.set_preference('webdriver_accept_untrusted_certs',True)
+            p.set_preference('webdriver_assume_untrusted_issuer',False)
+            p.set_preference('browser.download.dir', '.')
+            p.set_preference(
+                'browser.helperApps.neverAsk.saveToDisk',
+                ';'.join(['application/csv','application/octet-stream']))
+            self._webdriver = webdriver.Firefox(
+                firefox_profile=p,
+                firefox_binary=webdriver.firefox.firefox_binary.FirefoxBinary(
+                    firefox_path=None))
+        return self._webdriver
+
+    def compile(self):
+        return '\n'.join(l for l in self)
+
+    def handle_parse(self):
+        command = None
+        try:
+            command = self.parser.next()
+        except StopIteration:
+            # We don't want to catch StopIterations
+            raise
+        except Exception as e:
+            import traceback
+            print traceback.format_exc()
+
+            command = e.command
+            self.errorfound = True
+            if not isinstance(e, visionexceptions.VisionException):
+                e = visionexceptions.GarbageInputError(
+                    command=command,
+                    start=0,
+                    message="This is not valid Vision.")
+            command.error = e
+        command.executed = False
+        return command
+
+    def check_page_ready(self, command):
+        return self.webdriver.execute_script("return document.readyState == 'complete' || document.readyState == 'interactive';")
+
+    def handle_interpret(self, command):
+        ele = None
+
+        command.executed = True
+        try:
+            if command.check_readyState:
+                # If this is a command that cares whether we are ready,
+                # then verify that
+                ready = self.check_page_ready(command)
+                if ready:
+                    command.window_handle = self.webdriver.current_window_handle
+                else:
+                    # Tell the wait loop to wait and try again
+                    return False
+            return command.interpret(interpreter=self, ele=ele)
+        except UnexpectedAlertPresentException as uape:
+            raise
+        except WebDriverException as wde:
+            # We have a webdriverexception, so return false so we
+            # try again
+            return False
+        except visionexceptions.UnfoundElementError as uee:
+            # We couldn't find an element, so return false so we
+            # try again
+            return False
+        except Exception as e:
+            raise
+
+    def next(self):
+        stepped = False
+        if self.step and self.parser.file_scanner:
+            # We're supposed to step into python
+            stepped = True
+            self.parser.scanner = self.parser.file_scanner
+            self.step = False
+            import pdb;pdb.set_trace()
+
+        start = time.time()
+        try:
+            command = self.handle_parse()
+        except visionexceptions.VisionException as ve:
+            command.error = ve
+
+        skipscope = [scope for scope in command.scopes if scope.skip]
+        errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
+        is_to_the_interpreter = self.interactivity_enabled and not (command.error or command.skip) and isinstance(command.verb, visionparser.InterpreterVerb)
+        if not errored_or_skipping or is_to_the_interpreter:
+            try:
+                # We parsed successfully and we are still executing commands
+                if is_to_the_interpreter or not command.verb.timed:
+                    # We don't want to time interpreter commands
+                    self.handle_interpret(command)
+                else:
+                    WebDriverWait(command, command.wait).until(self.handle_interpret)
+            except Exception as e:
+                self.handle_interpret_command_exception(e, command)
+        finish = time.time()
+
+        time_format = '(%f seconds)'
+        if stepped:
+            # Change the time format to indicate the timing might not be
+            # reliable
+            time_format += '; code was debugged, timing information might not be accurate'
+
+            if not isinstance(command.scanner, visionscanner.VisionFileScanner):
+                # We inserted a step before a command that caused
+                # subcommands to be added, so we need to keep stepping
+                self.step = True
+            else:
+                # Always finish a step in interactive mode
+                self.parser.scanner = self.parser.interactive_scanner
+
+        command.timing[command] = {
+            'format': time_format,
+            'total': finish - start
+        }
+        return command
+
+    def output(self, out):
+        for outputter in self.outputters:
+            outputter.output(out)
+
+    def handle_output(self, command):
+        try:
+            self.output(command)
+
+            # Rewind interpreter errors when interactivity is enabled and the scanner can be rewound
+            if command.error and self.interactivity_enabled:
+                supercommand = None
+                if command.origin_scanner is not command.scanner:
+                    try:
+                        supercommand = next(com for com in command.previous_commands_iter if com.scanner is com.origin_scanner)
+                    except StopIteration as si:
+                        # There's no supercommand
+                        pass
+                if command.executed and hasattr(command.origin_scanner, 'rewind') and (not supercommand or not supercommand.error):
+                    # We rewind the origin scanner, so that errors found
+                    # in generated subcommands can be recovered
+                    command.origin_scanner.rewind()
+                    command.origin_scanner.toggle_breakpoint()
+                if supercommand and supercommand.subcommands:
+                    # the most recent command from our origin
+                    # has subcommands.  This means that it's our
+                    # supercommand, rather than us having been
+                    # created by the parser (like because of a
+                    # dedention) It gets to have our error, too
+                    supercommand.error = command.error
+        except KeyboardInterrupt as ki:
+            self.quit()
+        except Exception as e:
+            self.handle_interpret_command_exception(e, command)
+
+    def quit(self):
+        self.parser.scanner = self.parser.interactive_scanner
+        self.interactivity_enabled = False
+
+        # Close off all the leftover scopes
+        commands = self.parser.children or []
+        scope = sum(command.scopechange for command in commands if command.usable)
+
+        # At this point, the only scanner we care about is the
+        # subcommand
+        self.parser.scanner = self.parser.subcommand_scanner
+
+        # Delete file scanners
+        for scannername, scanner in self.parser.scanners.items():
+            if scanner.name not in ('<interactive>', '<subcommand>'):
+                del self.parser.scanners[scannername]
+
+        # If there are scopes open, close them
+        if scope:
+            self.parser.subcommand_scanner.addline([
+                "End %s" % command.verb.type for command in reversed(commands[-1].scopes)])
+            self.handle_commands()
+
+    def handle_commands(self):
+        code = ''
+        for command in self:
+            self.handle_output(command)
+        else:
+            self.parser.scanner = self.parser.interactive_scanner
+
+    def run(self):
+        exception = None
+        try:
+            first = True
+            while first or self.interactivity_enabled:
+                first = False
+                self.handle_commands()
+        except (Exception, KeyboardInterrupt) as e:
+            raise
+        finally:
+            self.quit()
+
+    def setup(self, mycls):
+        """
+        Sets up the callables for the different parser classes, based
+        on the defaults and callables dicts in the class.
+        """
+
+        # Set up default_factories
+        for cls, factories in mycls.defaults.items():
+            for callable_type, default in factories.items():
+                cls.set_default(callable_type, default)
+
+        # Set up callables
+        for cls, callables in mycls.callables.items():
+            for callable_type, activities in callables.items():
+                cls.add_callables(callable_type, activities)
+
+    interprets = collections.defaultdict( lambda: lambda interpret, *args, **kwargs: None )
+
+    def scroll(self, x=0, y=0, ele=None):
+        """
+        Scroll the given element to put its upper left at the given
+        coord, in its coordinate system.  If ele tests False, scroll the
+        current window.
+        """
+        x = max(x, 0)
+        y = max(y, 0)
+        if not ele:
+            self.webdriver.execute_script("window.scroll(arguments[0], arguments[1]);", x, y)
+        else:
+            self.webdriver.execute_script("""
+                arguments[0].scrollLeft = arguments[1];
+                arguments[0].scrollTop = arguments[2];""",
+                ele, x, y)
+
+    @property
+    def viewport(self):
+        return self.webdriver.execute_script("return {'width': window.innerWidth, 'height': window.innerHeight};")
+
+    def center_element(self, el, parent_el=None, horizontal=True, vertical=True):
+        """
+        If given a webdriver element, arrange for it to be centered on
+        the screen.  There are horizontal and vertical flags that
+        indicate which axis on which to center.
+
+        If the element has ancestor elements that are scrollable, it
+        will do this recursively.
+
+        el - the WebElement to center
+        parent_el - the parent WebElement in which to center el.  If
+        this is None, we find all ancestors, if False, we center inside
+        the window itself
+        """
+        if parent_el is None:
+            # We weren't given a parent, so we need to get all parents
+            # that have scrollbars
+            scroll_parents = self.webdriver.execute_script("""
+                var parent = arguments[0].parentNode;
+                var parents = [];
+                while(parent !== null && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html'){
+                    if(
+                    typeof(parent.scrollHeight) !== 'undefined' &&
+                        typeof(parent.scrollWidth) !== 'undefined' &&
+                        typeof(parent.clientHeight) !== 'undefined' &&
+                        typeof(parent.clientWidth) !== 'undefined'){
+                        // This node might have scrollbars
+                        var overflow_x = window.getComputedStyle(parent).getPropertyValue('overflow-y');
+                        var overflow_y = window.getComputedStyle(parent).getPropertyValue('overflow-x');
+                        if((overflow_x !== 'visible' && overflow_x !== 'hidden' && parent.scrollWidth > parent.clientWidth) ||
+                           (overflow_y !== 'visible' && overflow_y !== 'hidden' && parent.scrollHeight > parent.clientHeight))
+                        {
+                            // It does have scrollbars, keep it.
+                            parents.unshift(parent);
+                        }
+                    }
+                    parent = parent.parentNode;
+                }
+                return parents;""", el)
+            for parent, child in zip([False] + scroll_parents, scroll_parents + [el]):
+                self.center_element(child, parent, horizontal=horizontal, vertical=vertical)
+        else:
+            # Center inside the window
+            viewport = parent_el.size if parent_el else self.viewport
+            viewport_location = parent_el.location if parent_el else {'x': 0, 'y': 0}
+            middle = [el.location['x'] + el.size['width'] / 2 - viewport_location['x'], el.location['y'] + el.size['height'] / 2 - viewport_location['y']]
+            points = [max(0, middle[0] - viewport['width'] / 2), max(0, middle[1] - viewport['height'] / 2)]
+            if 0 < middle[0] < viewport['width']:
+                # we don't want to scroll horizontally if we don't have
+                # to
+                points[0] = 0
+            self.scroll(
+                x=points[0] if horizontal else self.webdriver.execute_script("return arguments[0].scrollLeft;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollX;"),
+                y=points[1] if vertical else self.webdriver.execute_script("return arguments[0].scrollTop;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollY;"),
+                ele=parent_el)
+
+        return el
+
+    @property
+    def flags(self):
+        self.flags = getattr(self, '_flags', collections.OrderedDict())
+        return self._flags
+
+    @flags.setter
+    def flags(self, flags):
+        self._flags = flags
+
+    @property
+    def upload_dir(self):
+        return os.path.abs_path('upload')
+
 if __name__ == "__main__":
-    interpreter = InteractiveInterpreter(
+    interpreter = VisionInterpreter(
         verbose=False,
         scope_after_error=False,
         maximum_wait=15,
