@@ -81,7 +81,6 @@ class TooManyTokens(ParserException):
             token=command,
             tokenstream=tokenstream,
             message="There are unconsumed tokens")
-        import pdb;pdb.set_trace()
 
 class UnexpectedToken(ParserException):
     def __init__(self, parser, token, tokenstream):
