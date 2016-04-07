@@ -227,24 +227,28 @@ class BasicTokenizer(object):
         command = self.commandtype(
             scanner=self.scanner,
             lineno=position)
-        tokens, remainder = self.scanline_with_remainder(line)
-        if remainder:
-            # We have a remainder, this is an error
-            start = len(line) - len(remainder)
-            msg = "Parse failure at line %d, starting at character %d: " % (command.lineno, start + 1)
-            compiled_regex = re.compile(self.regexps['whitespace'], re.IGNORECASE)
-            newpos = start + 1
-            while newpos < len(line):
-                if compiled_regex.match(line[newpos:]):
-                    break
-                newpos += 1
-            msg += '"%s" was not recognized' % line[start:newpos]
-            raise visionexceptions.GarbageInputError(
-                code=line,
-                command=command,
-                start=start,
-                message=msg)
-        return [command] + tokens
+        try:
+            tokens, remainder = self.scanline_with_remainder(line)
+            if remainder:
+                # We have a remainder, this is an error
+                start = len(line) - len(remainder)
+                msg = "Parse failure at line %d, starting at character %d: " % (command.lineno, start + 1)
+                compiled_regex = re.compile(self.regexps['whitespace'], re.IGNORECASE)
+                newpos = start + 1
+                while newpos < len(line):
+                    if compiled_regex.match(line[newpos:]):
+                        break
+                    newpos += 1
+                msg += '"%s" was not recognized' % line[start:newpos]
+                raise visionexceptions.GarbageInputError(
+                    code=line,
+                    command=command,
+                    start=start,
+                    message=msg)
+            return [command] + tokens
+        except Exception as e:
+            e.command = command
+            raise
 
     def scanline_with_remainder(self, line):
         """
@@ -418,6 +422,7 @@ class VisionScanner(object):
         command = None
         line_iter = iter(self.lines[self.position:])
         line = ''
+        exception = None
         while not line:
             # read until there's a non-blank line
             # or we run out of lines
@@ -432,14 +437,12 @@ class VisionScanner(object):
                 exception = si
                 raise
             except Exception as e:
-                exception = e
                 import traceback
+                exception = e
                 trace = traceback.format_exc()
                 print trace
-                e.command = getattr(e, 'command', command)
-                if e.command:
-                    e.command.trace = trace
-                    e.command.error = e
+                e.command.trace = trace
+                e.command.error = e
                 raise
             finally:
                 if not isinstance(exception, StopIteration):

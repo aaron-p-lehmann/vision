@@ -11,6 +11,7 @@ class UnmatchedEndScopeError(VisionException):
         super(UnmatchedEndScopeError, self).__init__(
             code=token.command.code,
             start=0,
+            command=token.command,
             message="Unmatched end of scope")
 
 class UndeclaredContextError(VisionException):
