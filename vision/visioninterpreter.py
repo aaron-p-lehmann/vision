@@ -59,181 +59,6 @@ import visionparser
 import visionexceptions
 import visionoutput
 
-def _displayed_filter(e, noun):
-    result = e.is_displayed()
-    return result
-
-class InteractiveParser(visionparser.VisionParser):
-    subcommand_scanner_name = '<subcommand>'
-    interactive_scanner_name = '<interactive>'
-
-    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveTokenizer, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
-        self.interactive_scanner_class=interactive_scanner_class
-        self.file_scanner_class=file_scanner_class
-        self.interpreter=interpreter
-        interpreter.parser=self
-
-        scanners = scanners if scanners else []
-
-        if not isinstance(scanners, list):
-            scanners = [scanners]
-
-        self._subcommand_scanner = interactive_scanner_class(
-            name=self.subcommand_scanner_name,
-            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
-            subcommand=True,
-            parser=self)
-        interactive_scanner = interactive_scanner_class(
-            name=self.interactive_scanner_name,
-            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
-            parser=self)
-        scanners = [self._subcommand_scanner, interactive_scanner] + scanners
-        self.scanners = collections.OrderedDict()
-
-        # Put every scanner in
-        for s in scanners:
-            self.scanner = s
-
-        interpreter.numlines = len(self.scanner.lines)
-        # We'll end up putting the last scanner in again, but that's ok
-        super(InteractiveParser, self).__init__(scanners[-1])
-
-    @property
-    def interactive_scanner(self):
-        try:
-            return self.scanners[self.interactive_scanner_name]
-        except KeyError, ke:
-            return None
-
-    @property
-    def subcommand_scanner(self):
-        try:
-            return self.scanners[self.subcommand_scanner_name]
-        except KeyError, ke:
-            return None
-
-    @property
-    def file_scanner(self):
-        scanners = reversed(self.scanners.values())
-        for scanner in scanners:
-            if isinstance(scanner, visionscanner.VisionFileScanner):
-                return scanner
-        else:
-            return None
-
-    @file_scanner.deleter
-    def file_scanner(self):
-        for key, scanner in self.scanners.items():
-            if isinstance(scanner, visionscanner.VisionFileScanner):
-                del self.scanners[key]
-        return None
-
-    @property
-    def scanner(self):
-        new_scanner = None
-        for (scanner_name, scanner) in reversed(self.scanners.items()):
-            if scanner == self.interactive_scanner:
-                if self.interpreter.interactivity_enabled:
-                    return scanner
-            else:
-                return scanner
-        return new_scanner
-
-    @scanner.setter
-    def scanner(self, scanner):
-        old_scanner = self.scanner
-        if scanner:
-            if scanner.name in self.scanners:
-                # We're setting the scanner to one we already have.  Pop it
-                # from the dictionary and put it back in, so that it is the
-                # most recent
-                self.scanners[scanner.name] = self.scanners.pop(scanner.name)
-            else:
-                # New scanner
-                self.scanners[scanner.name] = scanner
-            if old_scanner is self._subcommand_scanner and scanner is not self._subcommand_scanner and self.scanners.keys()[0] != self._subcommand_scanner.name:
-                # the subcommand scanner is always last, unless it is the
-                # current scanner.  If we replace it, we need to make a new
-                # dictionary, so it can go in first and be at the bottom of
-                # the stack
-                scanners = collections.OrderedDict()
-                del self.scanners[self._subcommand_scanner.name]
-                scanners[self._subcommand_scanner.name] = self._subcommand_scanner
-                for name, scanner in self.scanners.items():
-                    scanners[name] = scanner
-                self.scanners = scanners
-
-        # Remove any breakpoints on the first line of the file if we're
-        # switching from the interactive_scanner
-        if isinstance(scanner, visionscanner.VisionFileScanner) and old_scanner is self.interactive_scanner:
-            try:
-                scanner.lines[scanner.position]['breakpoint'] = False
-            except IndexError as ie:
-                # Either there is no file or the scanner does not support
-                # breakpoints, so we can ignore this
-                pass
-
-        return scanner
-
-    def next(self):
-        if not self.scanner:
-            # If there's no scanner, raise StopIteration
-            raise StopIteration()
-        try:
-            return super(InteractiveParser, self).next()
-        except StopIteration, si:
-            # We may have exhausted the scanner, or we may
-            # just need to change scanners
-            if isinstance(self.scanner, visionscanner.VisionFileScanner) and not self.scanner.done:
-                # We've hit a breakpoint.
-                if self.interpreter.interactivity_enabled:
-                    # Set the scanner to interactive
-                    self.scanner = self.interactive_scanner
-            elif self.scanner.done:
-                if self.scanner is self.subcommand_scanner:
-                    # This is the subcommand scanner, go back to the
-                    # origin
-                    self.scanner = self.children[-1].origin_scanner
-                if self.scanner is not self.interactive_scanner and self.scanner.done:
-                    for name, scanner in reversed(self.scanners.items()):
-                        if scanner.done:
-                            # We've exhausted the scanner
-                            if isinstance(scanner, visionscanner.VisionFileScanner):
-                                # It's a file, remove it
-                                del self.scanners[name]
-                        else:
-                            self.scanner = scanner
-                            break
-                    else:
-                        # All file scanners were exhausted
-                        if self.interpreter.interactivity_enabled:
-                            # We allow interactive mode, switch scanner
-                            self.scanner = self.interactive_scanner
-                        else:
-                            # no scanner we can use, reraise
-                            raise
-            if not self.scanner or (self.scanner is self.subcommand_scanner and self.scanner.done):
-                # We're not able to get a new main scanner
-                raise
-            return self.next()
-
-    @property
-    def number_of_lines(self):
-        # We don't count subcommands as lines
-        return len([c for c in self.children if c.scanner.name != self.subcommand_scanner_name])
-
-class BasicVisionOutput(visionoutput.VisionOutput):
-    """
-    Output handling for a command in a Vision session.  This output is
-    for printing to the console, code for outputting to logfiles should
-    be done in another class.
-    """
-    def setup_outputs(self, outputs):
-        outputs['file_literal'] = output_file_literal
-        outputs['selenium'] = output_command
-        outputs['existence'] = output_command
-        outputs['change focus'] = output_command
-
 def output_command(token, output):
     code = "NOT EXECUTED"
     command = token
@@ -1483,6 +1308,233 @@ def noun_ready(self, interpreter, ele):
     except:
         return False
 
+def _displayed_filter(e, noun):
+    result = e.is_displayed()
+    return result
+
+def _exact_value_filter(e, noun):
+    # verify teh widget has the right value
+    if not noun.value:
+        result = True
+    else:
+        elval = e.get_attribute('value') or e.text
+        result = not noun.value or elval == str(noun.value)
+    return result
+
+def _starts_with_value_filter(e, noun):
+    # Verify the widget starts with the right value
+    if not noun.value:
+        result = True
+    else:
+        elval = e.get_attribute('value') or e.text
+        result = elval.startswith(str(noun.value))
+    return result
+
+def _widget_value_filter(e, noun):
+    # Verify the row has a widget that starts with the right value
+    if noun.value and not [el for el in e.find_elements_by_xpath("./descendant::td[starts-with(normalize-space(), %s)]" % noun.value.compile()) if el.is_displayed()]:
+        # There are no cells in this row that start with the right
+        # value, we'll need to check widgets
+        for inp in e.find_elements_by_xpath("./descendant::td/descendant::input[not(@type='hidden')]"):
+            if (inp.get_attribute('value') or inp.get_attribute('placeholder')).strip().startswith(str(noun.value)) and inp.is_displayed():
+                # We've got an input that matches, return true
+                return True
+        for textarea in e.find_elements_by_xpath("./descendant::td/descendant::textarea"):
+            if (textarea.get_attribute('value') or textarea.get_attribute('placeholder')).strip().startswith(str(noun.value)) and textarea.is_displayed():
+                # We've got an input that matches, return true
+                return True
+        for button in e.find_elements_by_xpath("./descendant::td/descendant::button"):
+            if button.get_attribute('value').strip().startswith(str(noun.value)) and button.is_displayed():
+                # We've got an input that matches, return true
+                return True
+        from selenium.webdriver.support.ui import Select
+        for select in e.find_elements_by_xpath("./descendant::td/descendant::select"):
+            if select.is_displayed():
+                select = Select(select)
+                if select.first_selected_option.text.strip().startswith(str(noun.value)):
+                    # We've got an input that matches, return true
+                    return True
+        # No matches, return false
+        return False
+    else:
+        return True
+
+def _center_filter(e, noun, horizontal=True, vertical=True):
+    # Center the element
+    noun.parser.interpreter.center_element(e, horizontal=horizontal, vertical=vertical)
+    return True
+
+class InteractiveParser(visionparser.VisionParser):
+    subcommand_scanner_name = '<subcommand>'
+    interactive_scanner_name = '<interactive>'
+
+    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveTokenizer, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
+        self.interactive_scanner_class=interactive_scanner_class
+        self.file_scanner_class=file_scanner_class
+        self.interpreter=interpreter
+        interpreter.parser=self
+
+        scanners = scanners if scanners else []
+
+        if not isinstance(scanners, list):
+            scanners = [scanners]
+
+        self._subcommand_scanner = interactive_scanner_class(
+            name=self.subcommand_scanner_name,
+            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
+            subcommand=True,
+            parser=self)
+        interactive_scanner = interactive_scanner_class(
+            name=self.interactive_scanner_name,
+            tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
+            parser=self)
+        scanners = [self._subcommand_scanner, interactive_scanner] + scanners
+        self.scanners = collections.OrderedDict()
+
+        # Put every scanner in
+        for s in scanners:
+            self.scanner = s
+
+        interpreter.numlines = len(self.scanner.lines)
+        # We'll end up putting the last scanner in again, but that's ok
+        super(InteractiveParser, self).__init__(scanners[-1])
+
+    @property
+    def interactive_scanner(self):
+        try:
+            return self.scanners[self.interactive_scanner_name]
+        except KeyError, ke:
+            return None
+
+    @property
+    def subcommand_scanner(self):
+        try:
+            return self.scanners[self.subcommand_scanner_name]
+        except KeyError, ke:
+            return None
+
+    @property
+    def file_scanner(self):
+        scanners = reversed(self.scanners.values())
+        for scanner in scanners:
+            if isinstance(scanner, visionscanner.VisionFileScanner):
+                return scanner
+        else:
+            return None
+
+    @file_scanner.deleter
+    def file_scanner(self):
+        for key, scanner in self.scanners.items():
+            if isinstance(scanner, visionscanner.VisionFileScanner):
+                del self.scanners[key]
+        return None
+
+    @property
+    def scanner(self):
+        new_scanner = None
+        for (scanner_name, scanner) in reversed(self.scanners.items()):
+            if scanner == self.interactive_scanner:
+                if self.interpreter.interactivity_enabled:
+                    return scanner
+            else:
+                return scanner
+        return new_scanner
+
+    @scanner.setter
+    def scanner(self, scanner):
+        old_scanner = self.scanner
+        if scanner:
+            if scanner.name in self.scanners:
+                # We're setting the scanner to one we already have.  Pop it
+                # from the dictionary and put it back in, so that it is the
+                # most recent
+                self.scanners[scanner.name] = self.scanners.pop(scanner.name)
+            else:
+                # New scanner
+                self.scanners[scanner.name] = scanner
+            if old_scanner is self._subcommand_scanner and scanner is not self._subcommand_scanner and self.scanners.keys()[0] != self._subcommand_scanner.name:
+                # the subcommand scanner is always last, unless it is the
+                # current scanner.  If we replace it, we need to make a new
+                # dictionary, so it can go in first and be at the bottom of
+                # the stack
+                scanners = collections.OrderedDict()
+                del self.scanners[self._subcommand_scanner.name]
+                scanners[self._subcommand_scanner.name] = self._subcommand_scanner
+                for name, scanner in self.scanners.items():
+                    scanners[name] = scanner
+                self.scanners = scanners
+
+        # Remove any breakpoints on the first line of the file if we're
+        # switching from the interactive_scanner
+        if isinstance(scanner, visionscanner.VisionFileScanner) and old_scanner is self.interactive_scanner:
+            try:
+                scanner.lines[scanner.position]['breakpoint'] = False
+            except IndexError as ie:
+                # Either there is no file or the scanner does not support
+                # breakpoints, so we can ignore this
+                pass
+
+        return scanner
+
+    def next(self):
+        if not self.scanner:
+            # If there's no scanner, raise StopIteration
+            raise StopIteration()
+        try:
+            return super(InteractiveParser, self).next()
+        except StopIteration, si:
+            # We may have exhausted the scanner, or we may
+            # just need to change scanners
+            if isinstance(self.scanner, visionscanner.VisionFileScanner) and not self.scanner.done:
+                # We've hit a breakpoint.
+                if self.interpreter.interactivity_enabled:
+                    # Set the scanner to interactive
+                    self.scanner = self.interactive_scanner
+            elif self.scanner.done:
+                if self.scanner is self.subcommand_scanner:
+                    # This is the subcommand scanner, go back to the
+                    # origin
+                    self.scanner = self.children[-1].origin_scanner
+                if self.scanner is not self.interactive_scanner and self.scanner.done:
+                    for name, scanner in reversed(self.scanners.items()):
+                        if scanner.done:
+                            # We've exhausted the scanner
+                            if isinstance(scanner, visionscanner.VisionFileScanner):
+                                # It's a file, remove it
+                                del self.scanners[name]
+                        else:
+                            self.scanner = scanner
+                            break
+                    else:
+                        # All file scanners were exhausted
+                        if self.interpreter.interactivity_enabled:
+                            # We allow interactive mode, switch scanner
+                            self.scanner = self.interactive_scanner
+                        else:
+                            # no scanner we can use, reraise
+                            raise
+            if not self.scanner or (self.scanner is self.subcommand_scanner and self.scanner.done):
+                # We're not able to get a new main scanner
+                raise
+            return self.next()
+
+    @property
+    def number_of_lines(self):
+        # We don't count subcommands as lines
+        return len([c for c in self.children if c.scanner.name != self.subcommand_scanner_name])
+
+class BasicVisionOutput(visionoutput.VisionOutput):
+    """
+    Output handling for a command in a Vision session.  This output is
+    for printing to the console, code for outputting to logfiles should
+    be done in another class.
+    """
+    def setup_outputs(self, outputs):
+        outputs['file_literal'] = output_file_literal
+        outputs['selenium'] = output_command
+        outputs['existence'] = output_command
+        outputs['change focus'] = output_command
+
 class VisionInterpreter(object):
     """
     This sets up the compilation functions that turn the parse tree into
@@ -1527,6 +1579,7 @@ class VisionInterpreter(object):
             'actions': interpreter_verb_action,
         }),
     ])
+
     callables = collections.OrderedDict([
         (visionparser.Noun, {
             # post-parse actions
@@ -1670,8 +1723,101 @@ class VisionInterpreter(object):
         }),
     ])
 
+    tokens = {
+        # These tokens go into all variants of the language
+        visionscanner.BasicTokenizer: {
+            'ordinalnumber': [visionparser.Ordinal, {}],
+
+            # Indicates the start of phrases
+            'the': [visionparser.SubjectPartStart, {}],
+
+            # Verbs for verifying things
+            'should_exist': [visionparser.Verb, {'filters': [_center_filter]}],
+            'should_not_exist': [visionparser.Verb, {}],
+            'should_be_checked': [visionparser.Verb, {'filters': [_center_filter]}],
+            'should_not_be_checked': [visionparser.Verb, {'filters': [_center_filter]}],
+
+            # things to do with the widgets
+            'capture': [visionparser.Verb, {}],
+            'clear': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'click': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'hover_over': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'close': [visionparser.Verb, {'filters': [_center_filter]}],
+            'enter_file': [visionparser.Verb, {'must_have':(visionparser.FileLiteral,),'filters': [_center_filter]}],
+            'should_contain': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'should_contain_exactly': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'should_not_contain': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'navigate': [visionparser.Verb, {}],
+            'select': [visionparser.OrdinalVerb, {'cant_have':{visionparser.Literal:3, visionparser.Ordinal:2}, 'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'switch': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
+            'type': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'nothing': [visionparser.Noop, {}],
+            'test': [visionparser.Verb, {'filters': [_center_filter]}],
+            'accept': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
+            'dismiss': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
+            'authenticate': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
+            'wait': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
+            'require': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
+            'go_back': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
+            'push': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
+            'replace': [visionparser.OrdinalVerb, {'must_have':{visionparser.Literal: 2}, 'cant_have':{visionparser.Literal: 3, visionparser.Ordinal: 2},'filters': [_center_filter]}],
+
+            # template stuff
+            'template_section': [visionparser.Verb, {'cant_have': (visionparser.Noun, visionparser.Ordinal, visionparser.TemplateInjector)}],
+            'template': [visionparser.TemplateInjector, {'must_have': (visionparser.FileLiteral,), 'cant_have': {visionparser.Literal: 2}}],
+            'data_section': [visionparser.Verb, {'cant_have': {visionparser.Noun:1, visionparser.Ordinal:1}, 'must_have': {visionparser.TemplateInjector:1, visionparser.Literal:1}}],
+            'data': [visionparser.TemplateInjector, {'must_have': (visionparser.FileLiteral,), 'cant_have': {visionparser.Literal:3}}],
+
+            # comments
+            'because': [visionparser.Comment, {'must_have': [visionparser.Literal]}],
+            'so_that': [visionparser.Comment, {'must_have': [visionparser.Literal]}],
+
+            # within
+            'within': [visionparser.Wait, {'must_have': [visionparser.Literal]}],
+
+            # skip
+            'is_skipped': [visionparser.Skip, {}],
+
+            # Add variable to scope
+            'as': [visionparser.Variable, {'must_have':(visionparser.Literal,), 'cant_have':(visionparser.ValueObject,)}],
+
+            # widgets on the page
+            'alert': [visionparser.Noun, {'use_parent_context_for_interpretation': False}],
+            'button': [visionparser.Noun, {'filters': [_exact_value_filter, _starts_with_value_filter]}],
+            'box': [visionparser.Noun, {}],
+            'next_button': [visionparser.Noun, {'cant_have': [visionparser.Literal]}],
+            'checkbox': [visionparser.Noun, {}],
+            'dropdown': [visionparser.Noun, {}],
+            'file_input': [visionparser.Noun, {}],
+            'image': [visionparser.Noun, {}],
+            'link': [visionparser.Noun, {}],
+            'radio_button': [visionparser.Noun, {}],
+            'text': [visionparser.Noun, {}],
+            'textarea': [visionparser.Noun, {}],
+            'textfield': [visionparser.Noun, {}],
+            'default': [visionparser.Noun, {'cant_have': [visionparser.Literal]}],
+            'frame': [visionparser.Noun, {}],
+            'window': [visionparser.Noun, {}],
+            'table_body': [visionparser.Noun, {}],
+            'table_header': [visionparser.Noun, {}],
+            'table_footer': [visionparser.Noun, {}],
+            'cell': [visionparser.Noun, {}],
+            'row': [visionparser.Noun, {'filters': [_widget_value_filter]}],
+            'section': [visionparser.Noun, {}],
+            'table': [visionparser.Noun, {}],
+            'context': [visionparser.Context, {}],
+            'literal': [visionparser.Literal, {}],
+            'attributenoun': [visionparser.AttributeNoun, {}],
+            'fileliteral': [visionparser.FileLiteral, {}],
+
+            # Positons
+            'after': [visionparser.RelativePosition, {}],
+            'before': [visionparser.RelativePosition, {}],
+        },
+    }
+
     def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None):
-        self.setup(mycls=VisionInterpreter)
+        self.setup()
         self.step = False
         self.acceptable_wait = acceptable_wait
         self.interactivity_enabled = True
@@ -1956,23 +2102,29 @@ class VisionInterpreter(object):
         finally:
             self.quit()
 
-    def setup(self, mycls):
+    def setup(self):
         """
         Sets up the callables for the different parser classes, based
         on the defaults and callables dicts in the class.
         """
 
-        # Set up default_factories
-        for cls, factories in mycls.defaults.items():
-            for callable_type, default in factories.items():
-                cls.set_default(callable_type, default)
+        for mycls in reversed(type(self).__mro__):
+            if issubclass(mycls, VisionInterpreter):
+                # Set up tokens
+                for tokenizer, tokens in getattr(mycls, 'tokens', {}).items():
+                    if not hasattr(tokenizer, 'tokens'):
+                        tokenizer.tokens = {}
+                    tokenizer.tokens.update(tokens)
 
-        # Set up callables
-        for cls, callables in mycls.callables.items():
-            for callable_type, activities in callables.items():
-                cls.add_callables(callable_type, activities)
+                # Set up default_factories
+                for cls, factories in getattr(mycls, 'defaults', {}).items():
+                    for callable_type, default in factories.items():
+                        cls.set_default(callable_type, default)
 
-    interprets = collections.defaultdict( lambda: lambda interpret, *args, **kwargs: None )
+                # Set up callables
+                for cls, callables in getattr(mycls, 'callables', {}).items():
+                    for callable_type, activities in callables.items():
+                        cls.add_callables(callable_type, activities)
 
     def scroll(self, x=0, y=0, ele=None):
         """

@@ -86,10 +86,10 @@ letting Python spew at them.
 
 def get_subclasses(cl, found=None):
     yield cl
-    found = found or set([])
-    for sub in (sc for sc in cl.__subclasses__() if sc not in found):
-        found.add(sub)
-        get_subclasses(sub, found)
+    found = found or set(cl.__subclasses__())
+    for sub in found:
+        yield sub
+        found.update(sub.__subclasses__())
 
 class Typed(object):
     def __init__(self, identifier, token_type=None):
@@ -101,12 +101,25 @@ class Typed(object):
     @classmethod
     def add_callables(cls, callable_type, new_callables):
         for cl in get_subclasses(cls):
+            if callable_type not in cl.__dict__:
+                # The class we're dealing with doesn't have a dict for
+                # this callable type, make them one
+                # make sure to use the default of whatever dict they're
+                # inheritting
+                setattr(cl, callable_type, collections.defaultdict(
+                    getattr(cl, callable_type).default_factory))
             getattr(cl, callable_type).update(new_callables)
 
     @classmethod
     def set_default(cls, callable_type, default):
         for cl in get_subclasses(cls):
-            getattr(cl, callable_type).default_factory = lambda: default
+            if callable_type not in cl.__dict__:
+                # The class we're dealing with doesn't have a dict for
+                # this callable type, make them one
+                setattr(cl, callable_type, collections.defaultdict(lambda: default))
+            else:
+                # Reset the default for the callable type's dict
+                getattr(cl, callable_type).default_factory = lambda: default
 
 class Compileable(Typed):
     """
@@ -118,7 +131,7 @@ class Compileable(Typed):
     This is because this file is to be agnostic of the output format
     """
     compiles = collections.defaultdict( lambda:
-        lambda self: self.identifier )
+        lambda self, nots=(), base_axis=None: self.identifier )
 
     @property
     def compile(self):
@@ -140,7 +153,7 @@ class Interpretable(Typed):
     This is because this file is to be agnostic of the output format
     """
     interprets = collections.defaultdict( lambda:
-        lambda self: self.identifier )
+        lambda self, interpreter=None, ele=None: self.identifier )
 
     @property
     def interpret(self):
@@ -175,10 +188,14 @@ class Parseable(Typed):
     @property
     def action(self):
         if not hasattr( self, '_action' ):
-            self._action = types.MethodType(
-                self.actions[self.type],
-                self,
-                type(self))
+            try:
+                self._action = types.MethodType(
+                    self.actions[self.type],
+                    self,
+                    type(self))
+            except Exception as e:
+                import pdb;pdb.set_trace()
+                raise
         return self._action
 
     def get_added_tokens(self):
@@ -1056,6 +1073,44 @@ class Verb(FilteredValueObject):
     def usable(self):
         return not self.error or (not self.parser.interpreter.interactivity_enabled and self.type in ('require', 'test', 'validate'))
 
+    @classmethod
+    def add_callables(cls, callable_type, new_callables):
+        if callable_type == 'interprets':
+            # Verb interpret functions get special treatment, because a
+            # Verb can have different interpretations based on its noun
+            for cl in get_subclasses(cls):
+                if callable_type not in cl.__dict__:
+                    # The class we're dealing with doesn't have a dict for
+                    # this callable type, make them one
+                    # make sure to use the default of whatever dict they're
+                    # inheritting
+                    setattr(cl, callable_type, collections.defaultdict(
+                        lambda: collections.defaultdict(
+                            getattr(
+                                cl,
+                                callable_type,
+                                collections.defaultdict(lambda *args, **kwargs: None)
+                            ).default_factory)))
+                getattr(cl, callable_type).update(new_callables)
+        else:
+            super(Verb, cls).add_callables(callable_type, new_callables)
+
+    @classmethod
+    def set_default(cls, callable_type, default):
+        if callable_type == 'interprets':
+            # Verb interpret functions get special treatment, because a
+            # Verb can have different interpretations based on its noun
+            for cl in get_subclasses(cls):
+                if callable_type not in cl.__dict__:
+                    # The class we're dealing with doesn't have a dict for
+                    # this callable type, make them one
+                    setattr(cl, callable_type, collections.defaultdict(lambda: default))
+                else:
+                    # Reset the default for the callable type's dict
+                    getattr(cl, callable_type).default_factory = lambda: default
+        else:
+            super(Verb, cls).set_default(callable_type, default)
+
 class InterpreterVerb(Verb):
     """
     This is a Verb that is specific to the interpreter.  It doesn't
@@ -1187,9 +1242,6 @@ class Command(InputPhrase):
         Verb: 2,
         Variable:2 }
     yieldable = True
-    actions = collections.defaultdict( lambda: lambda action: None )
-    compiles = collections.defaultdict( lambda: lambda compile, *args, **kwargs: None )
-    interprets = collections.defaultdict( lambda: lambda interpret, *args, **kwargs: None )
 
     def __init__(self, scanner, lineno, token_type=None, scanner_args=None):
         self.scopechange = 0

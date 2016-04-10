@@ -27,58 +27,6 @@ single quotes inside), or a ParserObject (one of the keywords of the
 language).
 """
 
-def _exact_value_filter(e, noun):
-    # verify teh widget has the right value
-    if not noun.value:
-        result = True
-    else:
-        elval = e.get_attribute('value') or e.text
-        result = not noun.value or elval == str(noun.value)
-    return result
-
-def _starts_with_value_filter(e, noun):
-    # Verify the widget starts with the right value
-    if not noun.value:
-        result = True
-    else:
-        elval = e.get_attribute('value') or e.text
-        result = elval.startswith(str(noun.value))
-    return result
-
-def _widget_value_filter(e, noun):
-    # Verify the row has a widget that starts with the right value
-    if noun.value and not [el for el in e.find_elements_by_xpath("./descendant::td[starts-with(normalize-space(), %s)]" % noun.value.compile()) if el.is_displayed()]:
-        # There are no cells in this row that start with the right
-        # value, we'll need to check widgets
-        for inp in e.find_elements_by_xpath("./descendant::td/descendant::input[not(@type='hidden')]"):
-            if (inp.get_attribute('value') or inp.get_attribute('placeholder')).strip().startswith(str(noun.value)) and inp.is_displayed():
-                # We've got an input that matches, return true
-                return True
-        for textarea in e.find_elements_by_xpath("./descendant::td/descendant::textarea"):
-            if (textarea.get_attribute('value') or textarea.get_attribute('placeholder')).strip().startswith(str(noun.value)) and textarea.is_displayed():
-                # We've got an input that matches, return true
-                return True
-        for button in e.find_elements_by_xpath("./descendant::td/descendant::button"):
-            if button.get_attribute('value').strip().startswith(str(noun.value)) and button.is_displayed():
-                # We've got an input that matches, return true
-                return True
-        from selenium.webdriver.support.ui import Select
-        for select in e.find_elements_by_xpath("./descendant::td/descendant::select"):
-            if select.is_displayed():
-                select = Select(select)
-                if select.first_selected_option.text.strip().startswith(str(noun.value)):
-                    # We've got an input that matches, return true
-                    return True
-        # No matches, return false
-        return False
-    else:
-        return True
-
-def _center_filter(e, noun, horizontal=True, vertical=True):
-    # Center the element
-    noun.parser.interpreter.center_element(e, horizontal=horizontal, vertical=vertical)
-    return True
-
 class BasicTokenizer(object):
     """
     Splits a line into tokens.
@@ -111,96 +59,8 @@ class BasicTokenizer(object):
     # These tokens are searched for after keywords
     after_keywords = ()
 
-    tokens = {
-        # This tells what to do when we get particular kinds of tokens
-        'ordinalnumber': [visionparser.Ordinal, {}],
-
-        # Indicates the start of phrases
-        'the': [visionparser.SubjectPartStart, {}],
-
-        # Verbs for verifying things
-        'should_exist': [visionparser.Verb, {'filters': [_center_filter]}],
-        'should_not_exist': [visionparser.Verb, {}],
-        'should_be_checked': [visionparser.Verb, {'filters': [_center_filter]}],
-        'should_not_be_checked': [visionparser.Verb, {'filters': [_center_filter]}],
-
-        # things to do with the widgets
-        'capture': [visionparser.Verb, {}],
-        'clear': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'click': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'hover_over': [visionparser.Verb, {'cant_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'close': [visionparser.Verb, {'filters': [_center_filter]}],
-        'enter_file': [visionparser.Verb, {'must_have':(visionparser.FileLiteral,),'filters': [_center_filter]}],
-        'should_contain': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'should_contain_exactly': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'should_not_contain': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'navigate': [visionparser.Verb, {}],
-        'select': [visionparser.OrdinalVerb, {'cant_have':{visionparser.Literal:3, visionparser.Ordinal:2}, 'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'switch': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
-        'type': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'nothing': [visionparser.Noop, {}],
-        'test': [visionparser.Verb, {'filters': [_center_filter]}],
-        'accept': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
-        'dismiss': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
-        'authenticate': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
-        'wait': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
-        'require': [visionparser.Verb, {'must_have':(visionparser.Literal,)}],
-        'go_back': [visionparser.Verb, {'cant_have':(visionparser.Literal,)}],
-        'push': [visionparser.Verb, {'must_have':(visionparser.Literal,),'filters': [_center_filter]}],
-        'replace': [visionparser.OrdinalVerb, {'must_have':{visionparser.Literal: 2}, 'cant_have':{visionparser.Literal: 3, visionparser.Ordinal: 2},'filters': [_center_filter]}],
-
-        # template stuff
-        'template_section': [visionparser.Verb, {'cant_have': (visionparser.Noun, visionparser.Ordinal, visionparser.TemplateInjector)}],
-        'template': [visionparser.TemplateInjector, {'must_have': (visionparser.FileLiteral,), 'cant_have': {visionparser.Literal: 2}}],
-        'data_section': [visionparser.Verb, {'cant_have': {visionparser.Noun:1, visionparser.Ordinal:1}, 'must_have': {visionparser.TemplateInjector:1, visionparser.Literal:1}}],
-        'data': [visionparser.TemplateInjector, {'must_have': (visionparser.FileLiteral,), 'cant_have': {visionparser.Literal:3}}],
-
-        # comments
-        'because': [visionparser.Comment, {'must_have': [visionparser.Literal]}],
-        'so_that': [visionparser.Comment, {'must_have': [visionparser.Literal]}],
-
-        # within
-        'within': [visionparser.Wait, {'must_have': [visionparser.Literal]}],
-
-        # skip
-        'is_skipped': [visionparser.Skip, {}],
-
-        # Add variable to scope
-        'as': [visionparser.Variable, {'must_have':(visionparser.Literal,), 'cant_have':(visionparser.ValueObject,)}],
-
-        # widgets on the page
-        'alert': [visionparser.Noun, {'use_parent_context_for_interpretation': False}],
-        'button': [visionparser.Noun, {'filters': [_exact_value_filter, _starts_with_value_filter]}],
-        'box': [visionparser.Noun, {}],
-        'next_button': [visionparser.Noun, {'cant_have': [visionparser.Literal]}],
-        'checkbox': [visionparser.Noun, {}],
-        'dropdown': [visionparser.Noun, {}],
-        'file_input': [visionparser.Noun, {}],
-        'image': [visionparser.Noun, {}],
-        'link': [visionparser.Noun, {}],
-        'radio_button': [visionparser.Noun, {}],
-        'text': [visionparser.Noun, {}],
-        'textarea': [visionparser.Noun, {}],
-        'textfield': [visionparser.Noun, {}],
-        'default': [visionparser.Noun, {'cant_have': [visionparser.Literal]}],
-        'frame': [visionparser.Noun, {}],
-        'window': [visionparser.Noun, {}],
-        'table_body': [visionparser.Noun, {}],
-        'table_header': [visionparser.Noun, {}],
-        'table_footer': [visionparser.Noun, {}],
-        'cell': [visionparser.Noun, {}],
-        'row': [visionparser.Noun, {'filters': [_widget_value_filter]}],
-        'section': [visionparser.Noun, {}],
-        'table': [visionparser.Noun, {}],
-        'context': [visionparser.Context, {}],
-        'literal': [visionparser.Literal, {}],
-        'attributenoun': [visionparser.AttributeNoun, {}],
-        'fileliteral': [visionparser.FileLiteral, {}],
-
-        # Positons
-        'after': [visionparser.RelativePosition, {}],
-        'before': [visionparser.RelativePosition, {}],
-    }
+    # This tells what to do when we get particular kinds of tokens
+    tokens = {}
 
     REs = {
         'attributenoun': """(?P<attributenoun>{([^}]|\\\\})+})""",
@@ -584,11 +444,11 @@ class VisionFileScanner(VisionScanner):
 
     def toggle_token_breakpoint(self, token_type):
         found = False
-        if "_".join(token_type.split()) in self.get_token_mapper():
+        if "_".join(token_type.split()) in self.tokenizer.token_mapper:
             # Toggle the breakpoint for each line with
             # this kind of token, if there are any lines
             for (i, line) in itertools.dropwhile(lambda pair, start=self.position: pair[0] < start, enumerate(self.lines)):
-                tokens, remainder = self.scanline_with_remainder(line['code'])
+                tokens, remainder = self.tokenizer.scanline_with_remainder(line['code'])
                 if not remainder and [tok for tok in tokens if tok.type == token_type]:
                     self.toggle_breakpoint(i + 1)
                     found = True
