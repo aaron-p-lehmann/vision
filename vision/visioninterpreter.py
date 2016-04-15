@@ -417,7 +417,7 @@ def interpret_checked_check(self, interpreter, ele=None, expected=True):
         expected,
         ele)
 
-def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id=True, replace_element=True):
+def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id=True):
     # Here's a js function to find unique elements in set a that are not
     # in set b
     js_func = (
@@ -489,8 +489,7 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                 noun.id = el.get_attribute('id')
             except WebDriverException, wde:
                 pass
-    if replace_element:
-        noun.element = el
+    noun.element = el
     return el
 
 def interpret_noun(self, interpreter, context_element=None, requesting_command=None, locator_func=locator_func):
@@ -632,6 +631,15 @@ def interpret_subject(self, interpreter):
             # We've found a noun that's cached, stop looking
             context = noun.element
             break
+        else:
+            if hasattr(noun, 'element'):
+                # there's no good cache, but we have an element.  That's
+                # not right, remove it
+                del noun.element
+
+            if hasattr(noun, 'id'):
+                # We have an id for this noun, kill it
+                del noun.id
         nounpath.insert(0, noun)
 
     for noun in nounpath:

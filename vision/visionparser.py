@@ -188,14 +188,10 @@ class Parseable(Typed):
     @property
     def action(self):
         if not hasattr( self, '_action' ):
-            try:
-                self._action = types.MethodType(
-                    self.actions[self.type],
-                    self,
-                    type(self))
-            except Exception as e:
-                import pdb;pdb.set_trace()
-                raise
+            self._action = types.MethodType(
+                self.actions[self.type],
+                self,
+                type(self))
         return self._action
 
     def get_added_tokens(self):
@@ -527,10 +523,12 @@ class FileLiteral(Literal):
                 choice = raw_input("(C)reate or (A)ccept?")
                 while not "accept".startswith(choice.strip().lower()):
                     if "create".startswith(choice.strip().lower()):
-                        content = self.create_new_file()
+                        content = self.create_new_file(filename)
                         if content:
                             self.file_content = content
                             self.created = True
+                            with open(self.abs_path, 'wb') as input_file:
+                                input_file.write(content)
                             break
                         else:
                             print "The file cannot be empty.  If you don't want to create a file, enter (A)ccept."
@@ -547,7 +545,7 @@ class FileLiteral(Literal):
                 ve.ioe = ioe
                 raise ve
 
-    def create_text_file(self, fields=()):
+    def create_text_file(self, filename):
         # We're going to create a new file
         stopper = "<End of %s>" % filename
         content = ""
@@ -777,6 +775,13 @@ class Noun(FilteredValueObject):
         self._element = el
         el.noun = self
         return el
+
+    @element.deleter
+    def element(self):
+        # Remove the cached element and id
+        del self._element
+        if hasattr(self, 'id'):
+            del self.id
 
     @property
     def ordinal(self):
