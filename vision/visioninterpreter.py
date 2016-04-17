@@ -1,59 +1,31 @@
 # Python libraries
 from PIL import ImageChops, ImageOps, ImageColor, Image
-from datetime import datetime
 import StringIO
 import base64
 import collections
 import functools
 import itertools
-import re
 import sys
 import os
 import os.path
 import ntpath
-import optparse
 import time
 import operator
-import types
-import miedriver
 import platform
 
 # Selenium libraries
-# Try local first, fallback to one dir above
-try:
-    import selenium
-    from selenium import webdriver
-    from selenium.common.exceptions import (
-        WebDriverException,
-        ElementNotVisibleException,
-        StaleElementReferenceException,
-        NoSuchFrameException,
-        NoSuchWindowException,
-        TimeoutException,
-        NoAlertPresentException,
-        UnexpectedAlertPresentException )
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.keys import Keys
-except ImportError:
-    sys.path.append(os.path.join(os.path.dirname(__file__),'..'))
-    import selenium
-    from selenium import webdriver
-    from selenium.common.exceptions import (
-        WebDriverException,
-        ElementNotVisibleException,
-        StaleElementReferenceException,
-        NoSuchFrameException,
-        NoSuchWindowException,
-        TimeoutException,
-        NoAlertPresentException,
-        UnexpectedAlertPresentException )
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.common.keys import Keys
+import selenium
+from selenium import webdriver
+from selenium.common.exceptions import (
+    WebDriverException,
+    StaleElementReferenceException,
+    NoSuchWindowException,
+    UnexpectedAlertPresentException )
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
+# Vision modules
 import visionscanner
 import visionparser
 import visionexceptions
@@ -1376,7 +1348,7 @@ class InteractiveParser(visionparser.VisionParser):
     subcommand_scanner_name = '<subcommand>'
     interactive_scanner_name = '<interactive>'
 
-    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveTokenizer, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
+    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveVisionScanner, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
         self.interactive_scanner_class=interactive_scanner_class
         self.file_scanner_class=file_scanner_class
         self.interpreter=interpreter
@@ -1542,6 +1514,57 @@ class BasicVisionOutput(visionoutput.VisionOutput):
         outputs['selenium'] = output_command
         outputs['existence'] = output_command
         outputs['change focus'] = output_command
+
+def browser_unsupported(browser_options):
+    raise visionexceptions.VisionException(
+        message="The browser requested is not supported: %s" %
+        browser_options['type'])
+
+def browser_chrome(browser_options):
+    browser = browser_options.pop('type')
+    remote = browser_options.pop('remote')
+    p = webdriver.ChromeOptions()
+
+    # Chrome always has native events
+    # p.native_events_enabled = False
+    p.add_experimental_option("prefs", browser_options)
+    if remote:
+        # Make a remote webdriver
+        return webdriver.Remote(
+            command_executor=remote,
+            desired_capabilities=p.to_capabilities())
+    else:
+        return webdriver.Chrome(chrome_options=p)
+
+def browser_firefox(browser_options):
+    browser = browser_options.pop('type')
+    remote = browser_options.pop('remote')
+    p = webdriver.firefox.firefox_profile.FirefoxProfile()
+    p.native_events_enabled = False
+    for key, value in browser_options.items():
+        p.set_preference(key, value)
+    if remote:
+        # Make a remote webdriver
+        return webdriver.Remote(
+            command_executor=remote,
+            desired_capabilities=DesiredCapabilities.FIREFOX.copy(),
+            browser_profile=p)
+    else:
+        return webdriver.Firefox(
+            firefox_profile=p,
+            firefox_binary=webdriver.firefox.firefox_binary.FirefoxBinary(
+                firefox_path=None))
+
+def browser_internetexplorer(browser_options):
+    browser = browser_options.pop('type')
+    remote = browser_options.pop('remote')
+    if remote:
+        # Make a remote webdriver
+        return webdriver.Remote(
+            command_executor=remote,
+            desired_capabilities=DesiredCapabilities.INTERNETEXPLORER.copy())
+    else:
+        return webdriver.Ie()
 
 class VisionInterpreter(object):
     """
@@ -1824,8 +1847,37 @@ class VisionInterpreter(object):
         },
     }
 
-    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None):
+    browsers = {
+        'firefox': browser_firefox,
+        'chrome': browser_chrome,
+#        'android': browser_unsupported,
+#        'edge': browser_unsupported,
+#        'htmlunit': browser_unsupported,
+#        'htmlunitwithjs': browser_unsupported,
+        'internetexplorer': browser_internetexplorer,
+#        'ipad': browser_unsupported,
+#        'iphone': browser_unsupported,
+#        'opera': browser_unsupported,
+#        'phantomjs': browser_unsupported,
+#        'safari': browser_safari,
+    }
+
+    browser_profile = {
+        'dom.max_chrome_script_run_time': 60,
+        'browser.download.folderList': 2,
+        'browser.download.manager.showWhenStarting': False,
+        'webdriver_accept_untrusted_certs': True,
+        'webdriver_assume_untrusted_issuer': False,
+        'browser.download.dir': '.',
+        'browser.helperApps.neverAsk.saveToDisk': 'application/csv;application/octet-stream',
+    }
+
+    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None, browser_options=None):
         self.setup()
+        if not browser_options:
+            browser_options = {}
+        browser_options['type'] = browser_options.get('type', 'firefox')
+        browser_options['remote'] = browser_options.get('remote', None)
         self.step = False
         self.acceptable_wait = acceptable_wait
         self.interactivity_enabled = True
@@ -1835,6 +1887,7 @@ class VisionInterpreter(object):
         self.verbose = verbose
         self.errorfound = False
         self._handle = None
+        self.browser_options = browser_options
         if not self.flags:
             self.flags = collections.OrderedDict()
 
@@ -1910,22 +1963,9 @@ class VisionInterpreter(object):
     @property
     def webdriver(self):
         if not getattr( self, '_webdriver', None ):
-            p = webdriver.firefox.firefox_profile.FirefoxProfile()
-            p.native_events_enabled = False
-            p.set_preference('dom.max_script_run_time',60)
-            p.set_preference('dom.max_chrome_script_run_time',60)
-            p.set_preference('browser.download.folderList',2)
-            p.set_preference('browser.download.manager.showWhenStarting',False)
-            p.set_preference('webdriver_accept_untrusted_certs',True)
-            p.set_preference('webdriver_assume_untrusted_issuer',False)
-            p.set_preference('browser.download.dir', '.')
-            p.set_preference(
-                'browser.helperApps.neverAsk.saveToDisk',
-                ';'.join(['application/csv','application/octet-stream']))
-            self._webdriver = webdriver.Firefox(
-                firefox_profile=p,
-                firefox_binary=webdriver.firefox.firefox_binary.FirefoxBinary(
-                    firefox_path=None))
+            profile_options = self.browser_profile.copy()
+            profile_options.update(self.browser_options)
+            self._webdriver=self.browsers[profile_options['type']](profile_options)
         return self._webdriver
 
     def compile(self):
