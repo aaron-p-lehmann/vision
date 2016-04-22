@@ -1,12 +1,5 @@
-import os.path
-import sys
 import visioninterpreter
 import argparse
-
-browsers = [
-    'firefox',
-    'chrome',
-]
 
 def main():
     parser = argparse.ArgumentParser(
@@ -32,4 +25,7 @@ def main():
             'remote': arguments.remote,
             'type': arguments.browser})
     parser=visioninterpreter.InteractiveParser(interpreter=interpreter)
-    interpreter.run()
+    try:
+        interpreter.run()
+    finally:
+        interpreter.quit()
