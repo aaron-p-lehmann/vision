@@ -258,6 +258,8 @@ class VisionScanner(object):
     def addline(self, newlines):
         self.lines.extend(newlines)
 
+    def insertline(self, newlines):
+        self.lines = self.lines[:self.position] + newlines + self.lines[self.position:]
     def format_line(self, line):
         mod_line = '    '.join(line.split('\t')).rstrip()
         return mod_line
@@ -410,8 +412,8 @@ class VisionFileScanner(VisionScanner):
             {'breakpoint': False, 'code': line} for line in newlines)
 
     def insertline(self, newlines):
-        newlines = [{'code': line, 'breakpoint': False} for line in newlines]
-        self.lines = self.lines[:self.position] + newlines + self.lines[self.position:]
+        super(VisionFileScanner, self).insertline(
+            {'breakpoint': False, 'code': line} for line in newlines)
 
     def get_line(self):
         line = tokens = None
