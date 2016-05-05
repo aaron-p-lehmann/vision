@@ -2214,7 +2214,7 @@ class VisionInterpreter(object):
             scroll_parents = self.webdriver.execute_script("""
                 var parent = arguments[0].parentNode;
                 var parents = [];
-                while(parent !== null && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html'){
+                while(typeof(parent) !== 'undefined' && parent !== null && parent.tagName.toLowerCase() !== 'body' && parent.tagName.toLowerCase() !== 'html'){
                     if(
                     typeof(parent.scrollHeight) !== 'undefined' &&
                         typeof(parent.scrollWidth) !== 'undefined' &&
