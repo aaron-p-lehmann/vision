@@ -20,6 +20,7 @@ from selenium.common.exceptions import (
     WebDriverException,
     StaleElementReferenceException,
     NoSuchWindowException,
+    NoAlertPresentException,
     UnexpectedAlertPresentException )
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
