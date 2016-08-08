@@ -507,7 +507,7 @@ def interpret_cell(self, interpreter, context_element, *args, **kwargs):
         context_element.find_elements_by_xpath(
             './ancestor::table/descendant::th[starts-with(normalize-space(.),%s) and not(starts-with(normalize-space(descendant::th),%s))]' % ((self.value.compile(),) * 2)) +
         context_element.find_elements_by_xpath(
-            './ancestor::table/descendant::th[starts-with(normalize-space(., %s)) and not(starts-with(normalize-space(descendant::th, %s)))]' % ((self.value.compile(),) * 2)))
+            './ancestor::table/descendant::th[starts-with(normalize-space(.), %s) and not(starts-with(normalize-space(descendant::th), %s))]' % ((self.value.compile(),) * 2)))
     if not header_possibilities:
         raise visionexceptions.UnfoundElementError(self)
 
@@ -1462,7 +1462,8 @@ class InteractiveParser(visionparser.VisionParser):
             # If there's no scanner, raise StopIteration
             raise StopIteration()
         try:
-            return super(InteractiveParser, self).next()
+            next_command = super(InteractiveParser, self).next()
+            return next_command
         except StopIteration, si:
             # We may have exhausted the scanner, or we may
             # just need to change scanners
@@ -2065,8 +2066,9 @@ class VisionInterpreter(object):
                 # We inserted a step before a command that caused
                 # subcommands to be added, so we need to keep stepping
                 self.step = True
-            else:
-                # Always finish a step in interactive mode
+            elif not command.subcommands:
+                # Finish a step in interactive mode if we don't have
+                # subcommands
                 self.parser.scanner = self.parser.interactive_scanner
 
         command.timing[command] = {
