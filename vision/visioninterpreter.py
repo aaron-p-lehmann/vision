@@ -349,7 +349,17 @@ def interpret_selenium_command(self, interpreter, ele=None):
         if not ele:
             return False
 
-    ret = self.verb.interpret(interpreter=interpreter, ele=ele)
+    # Find the module our webdriver instance is from.  Do it this way
+    # because by this point we really don't know what kind of webdriver
+    # we have (local or remote, if local, what browser)
+    webdriver_module = sys.modules[sys.modules[type(interpreter.webdriver).__module__].__package__]
+
+    # if we aren't dealing with a file input, we don't want to upload
+    # files.  Selenium folks made the bizaar design descision to defalut
+    # the other way
+    file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
+    with interpreter.webdriver.file_detector_context(file_detector):
+        ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     return ret
 
 def interpret_existence_check(self, interpreter, ele=None, expected=True):
@@ -687,7 +697,7 @@ def interpret_click(self, interpreter, ele):
     except WebDriverException as wde:
         # Get around Selenium bug where links that are split over lines
         # can't be clicked.
-        if ele.noun.type=='link':
+        if ele.noun.type=='link' and 'unexpected alert open' not in str(wde):
             interpreter.webdriver.execute_script(
                 "arguments[0].click();",
                 ele)
@@ -736,9 +746,6 @@ def interpret_enter_file(self, interpreter, ele):
     if interpreter.webdriver.capabilities['browserName'] == 'chrome':
         interpreter.webdriver.execute_script("arguments[0].visibility = 'visible';", ele) # Chrome won't let you edit file inputs via js, but this seems to circumvent it
     path = self.value.abs_path
-    if path.startswith('/home/selenium/'):
-        # This section is a gross hack.to work with the MIEGrid...
-        path = r"Z:\\" + path[len('/home/selenium/'):]
     path = os.path.normpath(path)
     keys = ele.send_keys(path)
     print path
