@@ -349,7 +349,17 @@ def interpret_selenium_command(self, interpreter, ele=None):
         if not ele:
             return False
 
-    ret = self.verb.interpret(interpreter=interpreter, ele=ele)
+    # Find the module our webdriver instance is from.  Do it this way
+    # because by this point we really don't know what kind of webdriver
+    # we have (local or remote, if local, what browser)
+    webdriver_module = sys.modules[sys.modules[type(interpreter.webdriver).__module__].__package__]
+
+    # if we aren't dealing with a file input, we don't want to upload
+    # files.  Selenium folks made the bizaar design descision to defalut
+    # the other way
+    file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
+    with interpreter.webdriver.file_detector_context(file_detector):
+        ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     return ret
 
 def interpret_existence_check(self, interpreter, ele=None, expected=True):
@@ -507,7 +517,7 @@ def interpret_cell(self, interpreter, context_element, *args, **kwargs):
         context_element.find_elements_by_xpath(
             './ancestor::table/descendant::th[starts-with(normalize-space(.),%s) and not(starts-with(normalize-space(descendant::th),%s))]' % ((self.value.compile(),) * 2)) +
         context_element.find_elements_by_xpath(
-            './ancestor::table/descendant::th[starts-with(normalize-space(., %s)) and not(starts-with(normalize-space(descendant::th, %s)))]' % ((self.value.compile(),) * 2)))
+            './ancestor::table/descendant::th[starts-with(normalize-space(.), %s) and not(starts-with(normalize-space(descendant::th), %s))]' % ((self.value.compile(),) * 2)))
     if not header_possibilities:
         raise visionexceptions.UnfoundElementError(self)
 
@@ -687,7 +697,7 @@ def interpret_click(self, interpreter, ele):
     except WebDriverException as wde:
         # Get around Selenium bug where links that are split over lines
         # can't be clicked.
-        if ele.noun.type=='link':
+        if ele.noun.type=='link' and 'unexpected alert open' not in str(wde):
             interpreter.webdriver.execute_script(
                 "arguments[0].click();",
                 ele)
@@ -736,9 +746,6 @@ def interpret_enter_file(self, interpreter, ele):
     if interpreter.webdriver.capabilities['browserName'] == 'chrome':
         interpreter.webdriver.execute_script("arguments[0].visibility = 'visible';", ele) # Chrome won't let you edit file inputs via js, but this seems to circumvent it
     path = self.value.abs_path
-    if path.startswith('/home/selenium/'):
-        # This section is a gross hack.to work with the MIEGrid...
-        path = r"Z:\\" + path[len('/home/selenium/'):]
     path = os.path.normpath(path)
     keys = ele.send_keys(path)
     print path
@@ -1462,7 +1469,8 @@ class InteractiveParser(visionparser.VisionParser):
             # If there's no scanner, raise StopIteration
             raise StopIteration()
         try:
-            return super(InteractiveParser, self).next()
+            next_command = super(InteractiveParser, self).next()
+            return next_command
         except StopIteration, si:
             # We may have exhausted the scanner, or we may
             # just need to change scanners
@@ -2065,8 +2073,9 @@ class VisionInterpreter(object):
                 # We inserted a step before a command that caused
                 # subcommands to be added, so we need to keep stepping
                 self.step = True
-            else:
-                # Always finish a step in interactive mode
+            elif not command.subcommands:
+                # Finish a step in interactive mode if we don't have
+                # subcommands
                 self.parser.scanner = self.parser.interactive_scanner
 
         command.timing[command] = {
