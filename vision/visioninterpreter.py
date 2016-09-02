@@ -357,9 +357,16 @@ def interpret_selenium_command(self, interpreter, ele=None):
     # if we aren't dealing with a file input, we don't want to upload
     # files.  Selenium folks made the bizaar design descision to defalut
     # the other way
-    file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
-    with interpreter.webdriver.file_detector_context(file_detector):
+    try:
+        file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
+    except AttributeError as ae:
+        # We're using a webdriver module that doesn't do file detection,
+        # so we don't need to set up the context
         ret = self.verb.interpret(interpreter=interpreter, ele=ele)
+    else:
+        # We do filedection, set up the context
+        with interpreter.webdriver.file_detector_context(file_detector):
+            ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     return ret
 
 def interpret_existence_check(self, interpreter, ele=None, expected=True):
