@@ -42,13 +42,70 @@ class VisionOutput(object):
 
     def setup_outputs(self, outputs):
         # Set up the functions for handling output
-        pass
+        outputs['selenium'] = self.output_command
+        outputs['existence'] = self.output_command
+        outputs['change focus'] = self.output_command
+        outputs[None] = self.output_unparsed_command
 
     def print_command(self, command, code="", success=None):
-        print command + " - " + code
+        scope_level = sum(c.scopechange for c in command.parser.children)
+        if getattr(command.verb, 'type', None) in ('require', 'test', 'validate'):
+            scope_level = max(0, scope_level - 1)
+        indent = "".join(["    "] * scope_level)
+        self.print_command_text(
+            text=indent + command.code,
+            code=code,
+            success=success)
+        for warning in command.warnings:
+            self.print_warning_section(
+                warning=warning,
+                indent=indent,
+                success=success)
 
-    def print_comment(self, comment):
-        print comment
+    def output_command(self, token, output):
+        command = token
+        code = "NOT EXECUTED"
+        if command.executed:
+            code = command.timing[command]['format'] % command.timing[command]['total']
+        output.print_command(
+            command=command,
+            code=code,
+            success=None if command.error is None else not bool(command.error))
+        if command.error:
+            output.print_comment('\n'.join((
+                "Line failed:",
+                "    %s" % command.code)))
+            output.print_comment(command.trace)
+            if command.executed:
+                output.print_comment(str(command.error))
+                if command.scanner.name not in ('<interactive>', '<subcommand>') and output.interpreter.interactivity_enabled:
+                    output.print_subcomment("Get things into position that it will work, and type 'Run test' to resume.")
+            else:
+                output.print_comment(str(command.error))
+        return True
 
-    def print_subcomment(self, subcomment):
-        print '\t' + subcomment
+    def output_unparsed_command(self, token, output):
+        command = token
+        code = "ERROR"
+        self.print_command_text(
+            text=output.interpreter.parser.scanner.lines[-1],
+            code="FAILED TO PARSE",
+            success=False)
+        return True
+
+    def print_command_text(self, text, code, success=None):
+        print text + " - " + code
+
+    def print_comment(self, comment, indent=""):
+        print '    ' + indent + comment
+
+    def print_subcomment(self, subcomment, indent=""):
+        print '        ' + indent + subcomment
+
+    def print_warning_section(self, warning, indent="", success=None):
+        title = warning['title']
+        subwarnings = warning['subwarnings']
+        self.print_comment("Timing Information - " + title, indent=indent)
+        for warning in subwarnings:
+            self.print_subcomment(warning, indent=indent)
+

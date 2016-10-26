@@ -32,38 +32,6 @@ import visionparser
 import visionexceptions
 import visionoutput
 
-def output_command(token, output):
-    code = "NOT EXECUTED"
-    command = token
-    if command.executed:
-        code = command.timing[command]['format'] % command.timing[command]['total']
-    if not command.scanner.name == '<interactive>':
-        scope_level = sum(c.scopechange for c in command.parser.children)
-        if getattr(command.verb, 'type', None) in ('require', 'test', 'validate'):
-            scope_level -= 1
-        output.print_command(
-            ("%s" % '    ' * scope_level) + command.code, code)
-    if command.error:
-        output.print_comment('\n'.join((
-            "Line failed:",
-            "    %s" % command.code)))
-        output.print_comment(command.trace)
-        if command.executed:
-            output.print_comment(str(command.error))
-            if command.scanner.name not in ('<interactive>', '<subcommand>') and output.interpreter.interactivity_enabled:
-                output.print_subcomment("Get things into position that it will work, and type 'Run test' to resume.")
-        else:
-            output.print_comment(str(command.error))
-    if command.executed and output.interpreter.verbose:
-        lines = 0
-        output_func = output.print_comment
-        for token, timing_info in command.timing.items():
-            lines += 1
-            output_func(timing_info['format'] % (
-                timing_info['total']))
-            output_func = output.print_subcomment
-    return True
-
 def output_file_literal(token, output):
     literal = token
     if literal.created:
@@ -338,12 +306,24 @@ def interpret_selenium_command(self, interpreter, ele=None):
     if self.uses_elements:
         noun = self.subject or self.context
         if noun:
-            ele = interpreter.locate(
-                function=functools.partial(
-                    noun.interpret,
-                    interpreter=interpreter),
-                command=self,
-                maximum_wait=wait_time)
+            noun_time = time.time()
+            try:
+                ele = interpreter.locate(
+                    function=functools.partial(
+                        noun.interpret,
+                        interpreter=interpreter),
+                    command=self,
+                    maximum_wait=wait_time)
+            finally:
+                total = time.time() - noun_time
+                noun_timing = self.timing.get(
+                    noun, {
+                        'total': 0,
+                        'times_found': 0
+                    })
+                noun_timing['total'] += total
+                if ele:
+                    noun_timing['times_found'] += 1
         else:
             ele = interpreter.webdriver.find_element_by_xpath('/html')
         if not ele:
@@ -357,6 +337,7 @@ def interpret_selenium_command(self, interpreter, ele=None):
     # if we aren't dealing with a file input, we don't want to upload
     # files.  Selenium folks made the bizaar design descision to defalut
     # the other way
+    start = time.time()
     try:
         file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
     except AttributeError as ae:
@@ -367,6 +348,14 @@ def interpret_selenium_command(self, interpreter, ele=None):
         # We do filedection, set up the context
         with interpreter.webdriver.file_detector_context(file_detector):
             ret = self.verb.interpret(interpreter=interpreter, ele=ele)
+    finally:
+        total = time.time() - start
+        verb_timing = self.timing.get(self.verb, {
+            'total': 0
+        })
+        verb_timing['total'] += total
+        self.timing[self.verb] = verb_timing
+
     return ret
 
 def interpret_existence_check(self, interpreter, ele=None, expected=True):
@@ -410,77 +399,137 @@ def interpret_checked_check(self, interpreter, ele=None, expected=True):
 def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id=True):
     # Here's a js function to find unique elements in set a that are not
     # in set b
-    js_func = (
-        "var seen = [];\n"
-        "var matches = arguments[0];\n"
-        "var dont_want = arguments[1];\n"
-        "return matches.filter(function(el){\n"
-        "    if(seen.filter(function(x){return x === el;}).length != 0 || dont_want.filter(function(x){return x === el;}).length != 0) {\n"
-        "        return false;\n"
-        "    } else {\n"
-        "        seen.push(el);\n"
-        "        return true;\n"
-        "    }\n"
-        "});\n")
 
-    filters = filters or [lambda el, noun: True]
-    possibles = []
-    ordinal = ordinal or noun.ordinal
+    # Make sure there's a place to store timing information for this # noun
+    noun.command.timing[noun] = noun.command.timing.get(noun, {})
+    try:
+        js_func = (
+            "var seen = [];\n"
+            "var matches = arguments[0];\n"
+            "var dont_want = arguments[1];\n"
+            "return matches.filter(function(el){\n"
+            "    if(seen.filter(function(x){return x === el;}).length != 0 || dont_want.filter(function(x){return x === el;}).length != 0) {\n"
+            "        return false;\n"
+            "    } else {\n"
+            "        seen.push(el);\n"
+            "        return true;\n"
+            "    }\n"
+            "});\n")
 
-    # Get all possible matches
-    for xpath in finds:
-        possibles += func(xpath)
-    if len(possibles) < (ordinal or noun.ordinal):
-        # There are not enough possible matches, fail
-        return None
+        filters = filters or [lambda el, noun: True]
+        possibles = []
+        ordinal = ordinal or noun.ordinal
 
-    # Get all elements that we know we DON'T want
-    filter_elements = []
-    for xpath in nots:
-        filter_elements += func(xpath)
+        locator_info = {}
+        found_elements = {}
 
-    # 'elements' will have all visible elements that meet our criteria.
-    # It is determined like this:
-    # 1) Get all the elements that match any of the xpaths we're given.
-    # 2) Get all the elements that we know we DON'T want, even if they match the xpaths.
-    # 3) On the browser side, get unique members of 1 that are not members of 2
-    #    We do this on the browser side because it saves us expensive
-    #    round trips comparing WebElements for identity
-    # 4) run the result of 3 through any filters provided, in order.
-    #    This is done lazily, because the filters might be expensive,
-    #    performance-wise
-    elements = (el for el in noun.parser.interpreter.webdriver.execute_script(js_func, possibles, filter_elements))
-    for filt in filters:
-        elements = itertools.ifilter(functools.partial(filt, noun=noun), elements)
-
-    i = 0
-    el = None
-
-    # Look at elements until we find one that meets criteria or we run
-    # out.  Ignore stale elements
-    while i < ordinal:
-        try:
-            ele = next(elements)
-            i += 1
-        except StaleElementReferenceException, sere:
-            # If the element is stale, continue on
-            pass
-        except StopIteration, si:
-            # We don't have enough that meet the filter, return None
-            return None
-    else:
-        # We found a match!  Yay!
-        el = ele
-
-    if not getattr(noun, 'id', None):
-        noun.id = None
-        if replace_id:
+        # Get all possible matches
+        for xpath in finds:
+            if xpath in locator_info:
+                # We've already checked this in the loop, skip it
+                continue
+            xpath_start = time.time()
+            new_possibles = []
             try:
-                noun.id = el.get_attribute('id')
-            except WebDriverException, wde:
+                new_possibles = func(xpath)
+            finally:
+                xpath_end = time.time()
+                locator_info[xpath] = {
+                    'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
+                    'elements': new_possibles,
+                    'total': (xpath_end - xpath_start)}
+            new_possibles = [el for el in new_possibles if el in set(new_possibles) - set(possibles)]
+            possibles += new_possibles
+            for possible in new_possibles:
+                found_elements[possible] = xpath
+
+        if len(possibles) < (ordinal or noun.ordinal):
+            # There are not enough possible matches, fail
+            return None
+
+        # Get all elements that we know we DON'T want
+        filter_elements = []
+        filter_dict = {}
+        for xpath in nots:
+            if xpath in filter_dict:
+                # We've already checked this in the loop, skip it
+                continue
+            filter_dict[xpath] = True
+            xpath_start = time.time()
+            try:
+                new_filters = func(xpath)
+                new_filters = [el for el in new_filters if el in set(new_filters) - set(filter_elements)]
+                filter_elements += new_filters
+                for filter_element in new_filters:
+                    found_elements[filter_element] = xpath
+            finally:
+                xpath_end = time.time()
+                locator_info[xpath] = locator_info.get(xpath, {
+                    'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
+                    'elements': new_filters,
+                    'total': 0})
+                locator_info[xpath]['total'] += (xpath_end - xpath_start)
+
+        # 'elements' will have all visible elements that meet our criteria.
+        # It is determined like this:
+        # 1) Get all the elements that match any of the xpaths we're given.
+        # 2) Get all the elements that we know we DON'T want, even if they match the xpaths.
+        # 3) On the browser side, get unique members of 1 that are not members of 2
+        #    We do this on the browser side because it saves us expensive
+        #    round trips comparing WebElements for identity
+        # 4) run the result of 3 through any filters provided, in order.
+        #    This is done lazily, because the filters might be expensive,
+        #    performance-wise
+        elements = (el for el in noun.parser.interpreter.webdriver.execute_script(js_func, possibles, filter_elements))
+        for filt in filters:
+            elements = itertools.ifilter(functools.partial(filter_timing, filt=filt, noun=noun), elements)
+
+        i = 0
+        el = None
+
+        # Look at elements until we find one that meets criteria or we run
+        # out.  Ignore stale elements
+        while i < ordinal:
+            try:
+                ele = next(elements)
+                i += 1
+            except StaleElementReferenceException, sere:
+                # If the element is stale, continue on
                 pass
-    noun.element = el
-    return el
+            except StopIteration, si:
+                # We don't have enough that meet the filter, return None
+                return None
+        else:
+            # We found a match!  Yay!
+            el = ele
+            for element, locator in found_elements.items():
+                if element == el:
+                    # This is the element, note the locator that found
+                    # it
+                    el.locator = locator
+                    break
+
+        if not getattr(noun, 'id', None):
+            noun.id = None
+            if replace_id:
+                try:
+                    noun.id = el.get_attribute('id')
+                except WebDriverException, wde:
+                    pass
+        noun.element = el
+        return el
+    finally:
+        command_timing = noun.parser.children[-1].timing
+        noun_timing = command_timing.get(noun, {})
+        if getattr(noun, 'element', None):
+            noun_timing['times_found'] = noun_timing.get('times_found', 0) + 1
+            noun_timing['locator'] = noun.element.locator
+            noun_timing['other_elements_total'] = sum(info['total'] for locator, info in locator_info.items() if locator != noun.element.locator)
+        else:
+            noun_timing['times_found'] = 0
+            noun_timing['locator'] = None
+            noun_timing['other_elements_total'] = sum(info['total'] for locator, info in locator_info.items())
+        command_timing[noun] = noun_timing
 
 def interpret_noun(self, interpreter, context_element=None, requesting_command=None, locator_func=locator_func):
     context_element = context_element or interpreter.webdriver
@@ -950,7 +999,7 @@ def interpret_show_input(self, interpreter, ele, getall):
         if command.error:
             suffix += "\n\tError: %s" % command.error.message
         for warning in command.warnings:
-            suffix += "\n\tWARNING: %s" % warning
+            suffix += "\n\tWARNING: %s" % "\n\t\t".join(warning)
         else:
             status += "    "
         if (command.usable and not command.error and command.verb.type not in ('end test', 'end require') and command.scanner.name != interpreter.parser.subcommand_scanner_name) or getall:
@@ -1303,12 +1352,20 @@ def noun_ready(self, interpreter, ele):
     except:
         return False
 
+def filter_timing(el, filt, noun):
+    # Handle profiling information for filters
+    filter_start=time.time()
+    try:
+        return filt(el, noun=noun)
+    finally:
+        noun.command.timing[noun][filt.__name__] = time.time() - filter_start
+
 def _displayed_filter(e, noun):
     result = e.is_displayed()
     return result
 
 def _exact_value_filter(e, noun):
-    # verify teh widget has the right value
+    # verify the widget has the right value
     if not noun.value:
         result = True
     else:
@@ -1526,10 +1583,8 @@ class BasicVisionOutput(visionoutput.VisionOutput):
     be done in another class.
     """
     def setup_outputs(self, outputs):
+        super(BasicVisionOutput, self).setup_outputs(outputs)
         outputs['file_literal'] = output_file_literal
-        outputs['selenium'] = output_command
-        outputs['existence'] = output_command
-        outputs['change focus'] = output_command
 
 def browser_unsupported(browser_options):
     raise visionexceptions.VisionException(
@@ -1913,7 +1968,6 @@ class VisionInterpreter(object):
     def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
         maximum_wait = maximum_wait or command.wait
         acceptable_wait = acceptable_wait or self.acceptable_wait
-        start = time.time()
         ele = None
 
         def ele_is_ready(driver):
@@ -1924,16 +1978,6 @@ class VisionInterpreter(object):
                 return False
 
         ele = ele_is_ready(self.webdriver) if expected else not ele_is_ready(self.webdriver)
-        end = time.time()
-        total = end - start
-        if total > acceptable_wait:
-            # We found the element within the maximum allowed time,
-            # so this isn't an error, but it took longer than it
-            # should have.  Log a warning
-            warning = None
-            warning = "Took %f seconds, expected no more than %f" % (total, acceptable_wait)
-            command.warnings.append( warning )
-
         return ele
 
     def handle_interpret_command_exception(self, ex, command):
@@ -1995,18 +2039,17 @@ class VisionInterpreter(object):
             # We don't want to catch StopIterations
             raise
         except Exception as e:
-            import traceback
-            print traceback.format_exc()
-
-            command = e.command
+            command = getattr(e, 'command', None)
             self.errorfound = True
             if not isinstance(e, visionexceptions.VisionException):
                 e = visionexceptions.GarbageInputError(
                     command=command,
                     start=0,
                     message="This is not valid Vision.")
-            command.error = e
-        command.executed = False
+            if command:
+                command.error = e
+        if command:
+            command.executed = False
         return command
 
     def check_page_ready(self, command):
@@ -2020,12 +2063,16 @@ class VisionInterpreter(object):
             if command.check_readyState:
                 # If this is a command that cares whether we are ready,
                 # then verify that
-                ready = self.check_page_ready(command)
-                if ready:
-                    command.window_handle = self.webdriver.current_window_handle
-                else:
-                    # Tell the wait loop to wait and try again
-                    return False
+                check_start = time.time()
+                try:
+                    ready = self.check_page_ready(command)
+                    if ready:
+                        command.window_handle = self.webdriver.current_window_handle
+                    else:
+                        # Tell the wait loop to wait and try again
+                        return False
+                finally:
+                    command.timing['check_readyState'] = command.timing.get('check_readyState', 0) + time.time() - check_start
             return command.interpret(interpreter=self, ele=ele)
         except UnexpectedAlertPresentException as uape:
             raise
@@ -2050,45 +2097,94 @@ class VisionInterpreter(object):
             import pdb;pdb.set_trace()
 
         start = time.time()
+        command = None
         try:
             command = self.handle_parse()
-        except visionexceptions.VisionException as ve:
-            command.error = ve
 
-        skipscope = [scope for scope in command.scopes if scope.skip]
-        errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
-        is_to_the_interpreter = self.interactivity_enabled and not (command.error or command.skip) and isinstance(command.verb, visionparser.InterpreterVerb)
-        if not errored_or_skipping or is_to_the_interpreter:
-            try:
-                # We parsed successfully and we are still executing commands
-                if is_to_the_interpreter or not command.verb.timed:
-                    # We don't want to time interpreter commands
-                    self.handle_interpret(command)
-                else:
-                    WebDriverWait(command, command.wait).until(self.handle_interpret)
-            except Exception as e:
-                self.handle_interpret_command_exception(e, command)
-        finish = time.time()
+            start = time.time()
+            skipscope = [scope for scope in command.scopes if scope.skip]
+            errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
+            is_to_the_interpreter = self.interactivity_enabled and not (command.error or command.skip) and isinstance(command.verb, visionparser.InterpreterVerb)
+            if not errored_or_skipping or is_to_the_interpreter:
+                try:
+                    # We parsed successfully and we are still executing commands
+                    if is_to_the_interpreter or not command.verb.timed:
+                        # We don't want to time interpreter commands
+                        self.handle_interpret(command)
+                    else:
+                        WebDriverWait(command, command.wait).until(self.handle_interpret)
+                except Exception as e:
+                    self.handle_interpret_command_exception(e, command)
+        except StopIteration as si:
+            # We want stop iterations to propagate to the main loop
+            raise
+        except Exception as e:
+            command = getattr(e, 'command', None)
+        finally:
+            if command:
+                # We can only figure out how long it took to run the
+                # command if we're able to tokenize and parse the
+                # command
+                finish = time.time()
 
-        time_format = '(%f seconds)'
-        if stepped:
-            # Change the time format to indicate the timing might not be
-            # reliable
-            time_format += '; code was debugged, timing information might not be accurate'
+                time_format = '(%f seconds)'
+                if stepped:
+                    # Change the time format to indicate the timing might not be
+                    # reliable
+                    time_format += '; code was debugged, timing information might not be accurate'
 
-            if not isinstance(command.scanner, visionscanner.VisionFileScanner):
-                # We inserted a step before a command that caused
-                # subcommands to be added, so we need to keep stepping
-                self.step = True
-            elif not command.subcommands:
-                # Finish a step in interactive mode if we don't have
-                # subcommands
-                self.parser.scanner = self.parser.interactive_scanner
+                    if not isinstance(command.scanner, visionscanner.VisionFileScanner):
+                        # We inserted a step before a command that caused
+                        # subcommands to be added, so we need to keep stepping
+                        self.step = True
+                    elif not command.subcommands:
+                        # Finish a step in interactive mode if we don't have
+                        # subcommands
+                        self.parser.scanner = self.parser.interactive_scanner
 
-        command.timing[command] = {
-            'format': time_format,
-            'total': finish - start
-        }
+                command_total = finish - start
+                command.timing[command] = {
+                    'format': time_format,
+                    'total': command_total
+                }
+
+                if command_total > self.acceptable_wait:
+                    warning = {
+                        'title': "Took %f seconds, expected no more than %f" % (command_total, self.acceptable_wait),
+                        'subwarnings': []
+                    }
+                    if command.check_readyState:
+                        warning['subwarnings'].append(
+                            "Time spent waiting for the page to be ready: %f seconds" % (
+                                command.timing['check_readyState']))
+                    if command.uses_elements and command.subject:
+                        for noun in command.subject.nouns:
+                            if command.timing[noun]['times_found']:
+                                warning['subwarnings'].append(
+                                    "'%s': took %f seconds and %d searches to find correct element" % (
+                                        noun.code,
+                                        command.timing[noun]['total'],
+                                        command.timing[noun]['times_found']))
+                                warning['subwarnings'].append(
+                                    "Time to find rejected elements: %f seconds" % command.timing[noun]['other_elements_total'])
+                                for name, total in ((filter_name, filter_total) for filter_name, filter_total in command.timing[noun].items() if "_filter" in filter_name):
+                                    warning['subwarnings'].append(
+                                        "Time to filter elements with %s: %f seconds" % (name, total))
+                            else:
+                                warning['subwarnings'].append(
+                                    "'%s': was not found after %f seconds" % (
+                                        noun.code,
+                                        command.timing[noun]['total']))
+                    if command.verb in command.timing:
+                        warning['subwarnings'].append(
+                            "'%s': took %f seconds to complete" % (
+                                command.verb.code,
+                                command.timing[command.verb]['total']))
+                    else:
+                        warning['subwarnings'].append(
+                            "'%s': Was never executed" % command.verb.code)
+                    command.warnings.append(warning)
+
         return command
 
     def output(self, out):
@@ -2123,7 +2219,10 @@ class VisionInterpreter(object):
         except KeyboardInterrupt as ki:
             self.quit()
         except Exception as e:
-            self.handle_interpret_command_exception(e, command)
+            if command:
+                self.handle_interpret_command_exception(e, command)
+            else:
+                raise
 
     def quit(self):
         self.parser.scanner = self.parser.interactive_scanner
@@ -2151,7 +2250,8 @@ class VisionInterpreter(object):
     def handle_commands(self):
         code = ''
         for command in self:
-            self.handle_output(command)
+            if command:
+                self.handle_output(command)
         else:
             self.parser.scanner = self.parser.interactive_scanner
 
@@ -2163,7 +2263,8 @@ class VisionInterpreter(object):
                 first = False
                 self.handle_commands()
         except (Exception, KeyboardInterrupt) as e:
-            raise
+            import traceback
+            print traceback.format_exc()
         finally:
             self.quit()
 
