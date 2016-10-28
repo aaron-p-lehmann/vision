@@ -1263,6 +1263,7 @@ class Command(InputPhrase):
         self.window_handle = None
         self.uses_elements = True
         self.dont_verb = False
+        self.timings = {}
 
         super(Command, self).__init__(
             identifier='command',

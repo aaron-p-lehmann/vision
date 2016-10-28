@@ -260,6 +260,7 @@ class VisionScanner(object):
 
     def insertline(self, newlines):
         self.lines = self.lines[:self.position] + newlines + self.lines[self.position:]
+
     def format_line(self, line):
         mod_line = '    '.join(line.split('\t')).rstrip()
         return mod_line
@@ -291,28 +292,29 @@ class VisionScanner(object):
             line = self.format_line(next(line_iter))
             exception = None
             try:
-                if line:
-                    # We have a string, tokenize it
-                    token_list = self.scanline(line, self.position)
-                    command = token_list[0]
-            except StopIteration as si:
-                exception = si
-                raise
-            except Exception as e:
-                import traceback
-                exception = e
-                trace = traceback.format_exc()
-                print trace
-                e.command.trace = trace
-                e.command.error = e
-                raise
-            finally:
-                if not isinstance(exception, StopIteration):
-                    # We'll put this in when we want to start keeping
-                    # unparsed commands around
-                    # self.parser.adopt(command)
+                try:
+                    if line:
+                        # We have a string, tokenize it
+                        token_list = self.scanline(line, self.position)
+                        command = token_list[0]
+                except StopIteration as si:
+                    raise
+                except Exception as e:
+                    import traceback
+                    exception = e
+                    trace = traceback.format_exc()
+                    e.command.trace = trace
+                    e.command.error = e
+                    raise
+                finally:
+                    if not isinstance(exception, StopIteration):
+                        # We'll put this in when we want to start keeping
+                        # unparsed commands around
+                        # self.parser.adopt(command)
 
-                    self.advance()
+                        self.advance()
+            except Exception as e:
+                e.command = getattr(e, 'command', command)
         return token_list
 
     def advance(self, lines=1):
