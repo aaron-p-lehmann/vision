@@ -298,6 +298,7 @@ class VisionScanner(object):
                         token_list = self.scanline(line, self.position)
                         command = token_list[0]
                 except StopIteration as si:
+                    exception = si
                     raise
                 except Exception as e:
                     import traceback

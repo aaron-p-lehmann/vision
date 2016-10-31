@@ -400,8 +400,13 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
     # Here's a js function to find unique elements in set a that are not
     # in set b
 
-    # Make sure there's a place to store timing information for this # noun
-    noun.command.timing[noun] = noun.command.timing.get(noun, {})
+    # Make sure there's a place to store timing information for this
+    # noun
+    noun.command.timing[noun] = noun.command.timing.get(
+        noun, {
+            'total': 0,
+            'times_found': 0
+        })
     try:
         js_func = (
             "var seen = [];\n"
@@ -524,6 +529,7 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
         if getattr(noun, 'element', None):
             noun_timing['times_found'] = noun_timing.get('times_found', 0) + 1
             noun_timing['locator'] = noun.element.locator
+            noun_timing['correct_element'] = sum(info['total'] for locator, info in locator_info.items() if locator == noun.element.locator)
             noun_timing['other_elements_total'] = sum(info['total'] for locator, info in locator_info.items() if locator != noun.element.locator)
         else:
             noun_timing['times_found'] = 0
@@ -2159,12 +2165,23 @@ class VisionInterpreter(object):
                                 command.timing['check_readyState']))
                     if command.uses_elements and command.subject:
                         for noun in command.subject.nouns:
-                            if command.timing[noun]['times_found']:
+                            if 'times_found' not in command.timing[noun]:
+                                # This noun doesn't support timing
+                                # information, continue
                                 warning['subwarnings'].append(
-                                    "'%s': took %f seconds and %d searches to find correct element" % (
+                                    "Noun '%s': took a total of %f seconds to find element" % (
+                                        noun.code,
+                                        command.timing[noun]['total']))
+                                warning['subwarnings'].append(
+                                    "This noun does not provide detailed timing information")
+                            elif command.timing[noun]['times_found']:
+                                warning['subwarnings'].append(
+                                    "Noun '%s': took a total of %f seconds and %d searches to find element" % (
                                         noun.code,
                                         command.timing[noun]['total'],
                                         command.timing[noun]['times_found']))
+                                warning['subwarnings'].append(
+                                    "Time to find matching element: %f seconds" % command.timing[noun]['correct_element'])
                                 warning['subwarnings'].append(
                                     "Time to find rejected elements: %f seconds" % command.timing[noun]['other_elements_total'])
                                 for name, total in ((filter_name, filter_total) for filter_name, filter_total in command.timing[noun].items() if "_filter" in filter_name):
@@ -2177,7 +2194,7 @@ class VisionInterpreter(object):
                                         command.timing[noun]['total']))
                     if command.verb in command.timing:
                         warning['subwarnings'].append(
-                            "'%s': took %f seconds to complete" % (
+                            "Verb '%s': took %f seconds to complete" % (
                                 command.verb.code,
                                 command.timing[command.verb]['total']))
                     else:
