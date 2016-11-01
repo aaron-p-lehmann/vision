@@ -2195,33 +2195,37 @@ class VisionInterpreter(object):
                                 command.timing['check_readyState']))
                     if command.uses_elements and command.subject:
                         for noun in command.subject.nouns:
-                            if 'times_found' not in command.timing[noun]:
-                                # This noun doesn't support timing
-                                # information, continue
-                                warning['subwarnings'].append(
-                                    "Noun '%s': took a total of %f seconds to find element" % (
-                                        noun.code,
-                                        command.timing[noun]['total']))
-                                warning['subwarnings'].append(
-                                    "This noun does not provide detailed timing information")
-                            elif command.timing[noun]['times_found']:
-                                warning['subwarnings'].append(
-                                    "Noun '%s': took a total of %f seconds and %d searches to find element" % (
-                                        noun.code,
-                                        command.timing[noun]['total'],
-                                        command.timing[noun]['times_found']))
-                                warning['subwarnings'].append(
-                                    "Time to find matching element: %f seconds" % command.timing[noun]['correct_element'])
-                                warning['subwarnings'].append(
-                                    "Time to find rejected elements: %f seconds" % command.timing[noun]['other_elements_total'])
-                                for name, total in ((filter_name, filter_total) for filter_name, filter_total in command.timing[noun].items() if "_filter" in filter_name):
+                            if noun in command.timing:
+                                if 'times_found' not in command.timing[noun]:
+                                    # This noun doesn't support timing
+                                    # information, continue
                                     warning['subwarnings'].append(
-                                        "Time to filter elements with %s: %f seconds" % (name, total))
+                                        "Noun '%s': took a total of %f seconds to find element" % (
+                                            noun.code,
+                                            command.timing[noun]['total']))
+                                    warning['subwarnings'].append(
+                                        "This noun does not provide detailed timing information")
+                                elif command.timing[noun]['times_found']:
+                                    warning['subwarnings'].append(
+                                        "Noun '%s': took a total of %f seconds and %d searches to find element" % (
+                                            noun.code,
+                                            command.timing[noun]['total'],
+                                            command.timing[noun]['times_found']))
+                                    warning['subwarnings'].append(
+                                        "Time to find matching element: %f seconds" % command.timing[noun]['correct_element'])
+                                    warning['subwarnings'].append(
+                                        "Time to find rejected elements: %f seconds" % command.timing[noun]['other_elements_total'])
+                                    for name, total in ((filter_name, filter_total) for filter_name, filter_total in command.timing[noun].items() if "_filter" in filter_name):
+                                        warning['subwarnings'].append(
+                                            "Time to filter elements with %s: %f seconds" % (name, total))
+                                else:
+                                    warning['subwarnings'].append(
+                                        "'%s': was not found after %f seconds" % (
+                                            noun.code,
+                                            command.timing[noun]['total']))
                             else:
                                 warning['subwarnings'].append(
-                                    "'%s': was not found after %f seconds" % (
-                                        noun.code,
-                                        command.timing[noun]['total']))
+                                    "Noun '%s': This noun does not provide any timing information" % noun.code)
                     if command.verb in command.timing:
                         warning['subwarnings'].append(
                             "Verb '%s': took %f seconds to complete" % (
