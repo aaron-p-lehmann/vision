@@ -1970,9 +1970,9 @@ class VisionInterpreter(object):
         browser_options['type'] = browser_options.get('type', 'firefox')
         browser_options['remote'] = browser_options.get('remote', None)
         self.step = False
-        self.acceptable_wait = acceptable_wait
+        self.acceptable_wait = acceptable_wait or .000001
         self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait
+        self.maximum_wait = maximum_wait or .000001
         self.default_output_file=default_output_file
         self.outputters = outputters or [BasicVisionOutput(self)]
         self.verbose = verbose
