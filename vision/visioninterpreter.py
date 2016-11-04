@@ -8,10 +8,10 @@ import itertools
 import sys
 import os
 import os.path
-import ntpath
 import time
 import operator
 import platform
+import math
 
 # Selenium libraries
 import selenium
@@ -719,8 +719,6 @@ def interpret_authenticate(self, interpreter, ele):
     return True
 
 def interpret_capture(self, interpreter, ele):
-    # This is a no-op that is here so that the interactive interpreter
-    # won't choke on the 'Capture' command
     if ele:
         if hasattr(ele, 'noun') and not getattr(ele.noun, 'hover_on_capture', None):
             try:
@@ -728,6 +726,7 @@ def interpret_capture(self, interpreter, ele):
             except:
                 pass
         else:
+            # Not sure why we're sleeping.  Maybe time for any onout JS to run?
             import time
             time.sleep(1)
     image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64())))
@@ -819,29 +818,33 @@ def interpret_load_test(self, interpreter, ele, running=True):
     # interpreter will run
     if self.value:
         # We were told to load a file
+        filename = str(self.value)
+        filename = filename if "." in filename else filename + ".vision"
         try:
-            interpreter.parser.scanner = interpreter.parser.scanners[str(self.value)]
+            interpreter.parser.scanner = interpreter.parser.scanners[filename]
         except KeyError as key:
-            filename = str(self.value)
-            abs = ntpath.abspath(filename)
-            if os.name != 'nt':
-                # We're not running on nt, split and join the path
-                abs = os.sep.join(abs.split(ntpath.sep))
+            abs_path = os.path.abspath(os.path.join(interpreter.tests_dir, filename))
             try:
-                with open(abs, 'rb') as testfile:
+                with open(abs_path, 'rb') as testfile:
                     interpreter.parser.scanner = interpreter.parser.file_scanner_class(
                         filename=filename,
                         filish=testfile,
-                        scanner=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
+                        tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
                         parser=interpreter.parser)
             except IOError, ioe:
-                print "There was a problem loading the file '%s'" % abs
-        if not running:
-            # We don't want to RUN the test, just load it
-            interpreter.parser.scanner = interpreter.parser.interactive_scanner
+                interpreter.parser.scanner = interpreter.parser.file_scanner_class(
+                    filename=filename,
+                    tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
+                    parser=interpreter.parser)
     else:
         # We were not given a value, use the latest file_tokenizer
         interpreter.parser.scanner = interpreter.parser.file_scanner
+    if running:
+        # We want to run the test
+        interpreter.next_command = True
+    else:
+        # We don't want to RUN the test, just load it
+        interpreter.parser.scanner = interpreter.parser.interactive_scanner
 
     return True
 
@@ -879,9 +882,7 @@ def interpret_next_command(self, interpreter, ele):
     if scanner:
         try:
             interpreter.parser.scanner = scanner
-
-            # Make sure there's a breakpoint after the next line
-            scanner.lines[scanner.position + 1]['breakpoint'] = True
+            interpreter.next_command = 1
         except IndexError as ie:
             pass
     return True
@@ -933,15 +934,22 @@ def interpret_save_test(self, interpreter, ele):
                 [command.code]))
         scope_level += command.scopechange
 
-    # Get the absolute path in DOS format; we do this because we
-    # assume paths are given in DOS, since that is where the
-    # interpreter will run
-    abs = ntpath.abspath(str(self.value) if self.value else interpreter.default_output_file)
-    if os.name != 'nt':
-        # We're not running on nt, split and join the path
-        abs = os.sep.join(abs.split(ntpath.sep))
+    filename = str(self.value) if self.value else interpreter.default_output_file
+    filename = filename if "." in filename else filename + ".vision"
+    abs_path = os.path.abspath(filename)
 
-    with open(abs, 'wb+') as filish:
+    if interpreter.tests_dir is not None:
+        try:
+            os.makedirs(interpreter.tests_dir)
+        except OSError as ose:
+            # if the directory already existed, we'll errno 17
+            if ose.errno != 17:
+                # the error is NOT that the directory already existed,
+                # reraise
+                raise
+        abs_path = os.path.join(interpreter.tests_dir, filename)
+
+    with open(abs_path, 'wb+') as filish:
         filish.write('\n'.join(lines))
         filish.flush()
         os.fsync(filish.fileno())
@@ -949,6 +957,7 @@ def interpret_save_test(self, interpreter, ele):
 
 def interpret_finish(self, interpreter, ele):
     interpreter.interactivity_enabled = False
+    interpreter.next_command = True
     return True
 
 def interpret_select(self, interpreter, ele):
@@ -974,51 +983,43 @@ def interpret_show_test(self, interpreter, ele, getall):
                 message="The test%s is not loaded" % (' ' + (breakpoint_filename or '')) )
 
     if scanner:
-        field_width = len(str(len(scanner.lines))) + 1
-        for i, line in enumerate(scanner.lines[scanner.position:], scanner.position):
+        field_width = int(math.log10(len(scanner.lines))) + 1
+        for i, line in enumerate(scanner.lines[scanner.position:], scanner.position + 1):
             breakpoint, code = line['breakpoint'], line['code']
-            print ("%s% " + str(field_width) + "d| %s") % (("B " if breakpoint else "  "), i + 1, code.rstrip())
+            print ("%s|%s:% " + str(field_width) + "d| %s") % (("B" if breakpoint else " "), scanner.name, i, code.rstrip())
     return True
 
 def interpret_show_input(self, interpreter, ele, getall):
     lines = []
     scope_level = 0
-    line_number_width = len(str(len(self.parser.children)))
-    test_name_width = max([len(command.scanner.name) for command in self.parser.children])
-    for (i, command) in enumerate(self.parser.children):
-        status = ""
-        suffix = ""
-        if isinstance(command.verb, visionparser.InterpreterVerb):
-            status += "I"
-        else:
-            status += " "
-        if command.removed:
-            status += "-"
-        else:
-            status += " "
-        if command.error:
-            status += "E"
-        elif command.skip or [scope for scope in command.scopes if scope.skip]:
-            status += "S"
-        else:
-            status += " "
-        if command.error:
-            suffix += "\n\tError: %s" % command.error.message
-        for warning in command.warnings:
-            suffix += "\n\tWARNING: %s" % "\n\t\t".join(warning)
-        else:
-            status += "    "
+    line_format = "{interpreter_code}{removal_code}{error_code}|{filename:<%(filename_width)d}:{line_number:>%(line_number_width)d}|{indent}" % {
+        'filename_width': (max(len(command.scanner.name) for command in self.parser.children)),
+        'line_number_width': (int(math.log10(len(self.parser.children))) + 1)}
+    for (i, command) in enumerate(self.parser.children,1):
+        before = line_format.format(
+            interpreter_code="I" if isinstance(command.verb, visionparser.InterpreterVerb) else " ",
+            removal_code="-" if command.removed else " ",
+            error_code="E" if command.error else "S" if command.skip or [scope for scope in command.scopes if scope.skip] else " ",
+            filename=command.scanner.name,
+            line_number=i,
+            indent="".join(["    "] * scope_level))
+        before_space = "".join([" "] * len(before))
         if (command.usable and not command.error and command.verb.type not in ('end test', 'end require') and command.scanner.name != interpreter.parser.subcommand_scanner_name) or getall:
-            lines.append(
-                ("%s % " + str(test_name_width) + "s:%s|%s%s%s") % (
-                    status,
-                    command.filename,
-                    ('%%%fd' % line_number_width) % (i + 1),
-                    ''.join(['    '] * scope_level),
-                    command.code,
-                    suffix))
+            print before + command.code
+            if command.error:
+                print "%s    Error: %s" % (
+                    before_space,
+                    command.error.message)
+            for warning in command.warnings:
+                for output in command.parser.interpreter.outputters:
+                    if isinstance(output, BasicVisionOutput):
+                        # If this is an output to the command line, then use
+                        # it to output the warnings
+                        output.print_warning_section(
+                            warning,
+                            indent=before_space,
+                            success=not command.error)
         scope_level += command.scopechange
-    print '\n'.join(lines)
 
     return True
 
@@ -1949,22 +1950,43 @@ class VisionInterpreter(object):
         'browser.helperApps.neverAsk.saveToDisk': 'application/csv;application/octet-stream',
     }
 
-    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None, browser_options=None):
+    def __init__(
+        self,
+        verbose=False,
+        debug=False,
+        timing=False,
+        acceptable_wait=3,
+        maximum_wait=15,
+        default_output_file='',
+        outputters=None,
+        browser_options=None,
+        tests_dir=None,
+        results_dir=None,
+        upload_dir=None):
         self.setup()
         if not browser_options:
             browser_options = {}
         browser_options['type'] = browser_options.get('type', 'firefox')
         browser_options['remote'] = browser_options.get('remote', None)
         self.step = False
-        self.acceptable_wait = acceptable_wait
+        self.acceptable_wait = acceptable_wait or .000001
         self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait
+        self.maximum_wait = maximum_wait or .000001
         self.default_output_file=default_output_file
         self.outputters = outputters or [BasicVisionOutput(self)]
         self.verbose = verbose
         self.errorfound = False
         self._handle = None
         self.browser_options = browser_options
+        self.tests_dir = tests_dir
+        self.results_dir = results_dir
+        self.upload_dir = upload_dir
+        self.debug = debug
+        self.timing = timing
+
+        # By default we read as many commands out of files as we can.
+        self.next_command = True
+
         if not self.flags:
             self.flags = collections.OrderedDict()
 
@@ -2101,12 +2123,19 @@ class VisionInterpreter(object):
             self.parser.scanner = self.parser.file_scanner
             self.step = False
             import pdb;pdb.set_trace()
+        elif not self.next_command and self.interactivity_enabled:
+            # We need to go into interactive mode
+            self.parser.scanner = self.parser.interactive_scanner
 
         start = time.time()
         command = None
         try:
             command = self.handle_parse()
 
+            if not isinstance(self.parser.scanner,visionscanner.InteractiveVisionScanner) and not isinstance(self.next_command, bool):
+                self.next_command = max(
+                    0,
+                    self.next_command - 1)
             start = time.time()
             skipscope = [scope for scope in command.scopes if scope.skip]
             errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
@@ -2281,7 +2310,9 @@ class VisionInterpreter(object):
                 self.handle_commands()
         except (Exception, KeyboardInterrupt) as e:
             import traceback
-            print traceback.format_exc()
+            if self.debug:
+                # If we're in deboug mode, print the trace
+                print traceback.format_exc()
         finally:
             self.quit()
 
@@ -2395,10 +2426,6 @@ class VisionInterpreter(object):
     @flags.setter
     def flags(self, flags):
         self._flags = flags
-
-    @property
-    def upload_dir(self):
-        return os.path.abs_path('upload')
 
 if __name__ == "__main__":
     interpreter = VisionInterpreter(

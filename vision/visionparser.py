@@ -484,7 +484,7 @@ class FileLiteral(Literal):
                 return self.identifier
 
             self.open_file(
-                path=self.directory or self.command.parser.interpreter.upload_dir,
+                path=self.directory,
                 file_type="upload")
         return self.file_content or ""
 
@@ -493,7 +493,7 @@ class FileLiteral(Literal):
 
     def open_file(self, path, file_type):
         import os.path
-        self.directory = path
+        self.directory = path or self.command.parser.interpreter.upload_dir
         self.file_type = file_type
         filename = self.identifier[1:-1]
         self.abs_path = os.path.join(
@@ -501,6 +501,15 @@ class FileLiteral(Literal):
             filename)
         try:
             content = ""
+            if self.command.parser.interpreter.upload_dir is not None:
+                try:
+                    os.makedirs(self.command.parser.interpreter.upload_dir)
+                except OSError as ose:
+                    # if the directory already existed, we'll errno 17
+                    if ose.errno != 17:
+                        # the error is NOT that the directory already existed,
+                        # reraise
+                        raise
             with open(self.abs_path, 'rb') as input_file:
                 content = input_file.read()
             if not content:
@@ -1536,7 +1545,7 @@ class Command(InputPhrase):
             lambda token: isinstance(token, Wait),
             self.children)
         try:
-            return int(str(next(wait_iter).value))
+            return float(str(next(wait_iter).value))
         except StopIteration, si:
             return self.parser.interpreter.maximum_wait
 
@@ -1677,4 +1686,16 @@ class VisionParser(Phrase):
     @property
     def number_of_lines(self):
         return len(self.children)
+
+    @property
+    def tests_directory(self):
+        return self.interpreter.tests_directory if self.interpreter else os.path.join(os.path.abspath(os.getcwd()), "tests")
+
+    @property
+    def upload_directory(self):
+        return self.interpreter.upload_directory if self.interpreter else os.path.join(os.path.abspath(os.getcwd()), "upload")
+
+    @property
+    def results_directory(self):
+        return self.interpreter.results_directory if self.interpreter else os.path.join(os.path.abspath(os.getcwd()), "results")
 

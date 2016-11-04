@@ -7,6 +7,11 @@ import types
 import StringIO
 import collections
 import time
+import os
+import os.path
+import readline
+
+readline.parse_and_bind("tab: complete")
 
 # MIE libraries
 import visionparser
@@ -437,7 +442,7 @@ class VisionFileScanner(VisionScanner):
         self.position -= lines
 
     def format_line(self, line):
-        if self.lines[self.position]['breakpoint'] and self.parser.interpreter.interactivity_enabled:
+        if (self.lines[self.position]['breakpoint'] or not self.parser.interpreter.next_command) and self.parser.interpreter.interactivity_enabled:
             # We're moving to the next line and the interpreter supports interactive mode
             self.lines[self.position]['breakpoint'] = False
             raise StopIteration()

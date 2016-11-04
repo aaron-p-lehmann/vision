@@ -1,4 +1,6 @@
 import collections
+import os
+import os.path
 
 class VisionOutput(object):
     """
@@ -56,11 +58,12 @@ class VisionOutput(object):
             text=indent + command.code,
             code=code,
             success=success)
-        for warning in command.warnings:
-            self.print_warning_section(
-                warning=warning,
-                indent=indent,
-                success=success)
+        if command.warnings and self.interpreter.timing:
+            for warning in command.warnings:
+                self.print_warning_section(
+                    warning=warning,
+                    indent=indent,
+                    success=success)
 
     def output_command(self, token, output):
         command = token
@@ -75,13 +78,31 @@ class VisionOutput(object):
             output.print_comment('\n'.join((
                 "Line failed:",
                 "    %s" % command.code)))
-            output.print_comment(command.trace)
+            if output.interpreter.debug:
+                output.print_comment(command.trace)
             if command.executed:
-                output.print_comment(str(command.error))
+                # Save this for when there are better messages on our exceptions
+                # output.print_comment(str(command.error))
                 if command.scanner.name not in ('<interactive>', '<subcommand>') and output.interpreter.interactivity_enabled:
                     output.print_subcomment("Get things into position that it will work, and type 'Run test' to resume.")
             else:
-                output.print_comment(str(command.error))
+                # Save this for when there are better messages on our exceptions
+                # output.print_comment(str(command.error))
+                output.print_subcomment("The command was invalid Vision")
+        if getattr(command, 'capture', None) and output.interpreter.results_dir is not None:
+            # We took a screenshot, save it to disk
+            name = str(command.verb.value) if command.verb.value else "default_screenshot_name.png"
+            name = name if "." in name else name + ".png"
+            dir_path = os.path.join(output.interpreter.results_dir, "screenshots")
+            try:
+                os.makedirs(dir_path)
+            except OSError as ose:
+                # if the directory already existed, we'll errno 17
+                if ose.errno != 17:
+                    # the error is NOT that the directory already existed,
+                    # reraise
+                    raise
+            command.capture.convert('RGBA').save(os.path.join(dir_path, name))
         return True
 
     def output_unparsed_command(self, token, output):
