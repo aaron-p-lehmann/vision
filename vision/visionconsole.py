@@ -73,14 +73,14 @@ def get_args(arguments=None):
         arguments.root_test_directory)
     return arguments
 
-def main():
+def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser):
     # Get the arguments, in three passes
     arguments = get_args()
     arguments = get_args(arguments)
     arguments = get_args(arguments)
 
     # Make the necessary directories, if they don't exist
-    interpreter = visioninterpreter.VisionInterpreter(
+    interpreter = interpreter_type(
         verbose=False,
         debug=arguments.debug,
         timing=arguments.timing,
@@ -98,11 +98,9 @@ def main():
         browser_options={
             'remote': arguments.remote,
             'type': arguments.browser})
-    parser=visioninterpreter.InteractiveParser(
+    parser=parser_type(
         interpreter=interpreter)
 
-    parser.interactive_scanner.addline([
-        'Load test "%s"' % test for test in reversed(arguments.testfiles)])
     try:
         # Try to make the webdriver, and catch failures with a vague
         # message, then exit.  Later, we'll figure out how to make the
@@ -116,6 +114,8 @@ def main():
                     "chrome": "chromedriver",
                     "firefox": "geckodriver",
                     "internetexplorer": "iedriver"}))
+    parser.interactive_scanner.addline([
+        'Load test "%s"' % test for test in reversed(arguments.testfiles)])
     try:
         interpreter.run()
     finally:

@@ -287,7 +287,9 @@ class VisionScanner(object):
 
     def next(self):
         token_list = []
-        command = None
+        command = self.commandtype(
+            scanner=self,
+            lineno=self.position + 1)
         line_iter = iter(self.lines[self.position:])
         line = ''
         exception = None
@@ -297,30 +299,27 @@ class VisionScanner(object):
             line = self.format_line(next(line_iter))
             exception = None
             try:
-                try:
-                    if line:
-                        # We have a string, tokenize it
-                        token_list = self.scanline(line, self.position)
-                        command = token_list[0]
-                except StopIteration as si:
-                    exception = si
-                    raise
-                except Exception as e:
-                    import traceback
-                    exception = e
-                    trace = traceback.format_exc()
-                    e.command.trace = trace
-                    e.command.error = e
-                    raise
-                finally:
-                    if not isinstance(exception, StopIteration):
-                        # We'll put this in when we want to start keeping
-                        # unparsed commands around
-                        # self.parser.adopt(command)
-
-                        self.advance()
+                if line:
+                    # We have a string, tokenize it
+                    token_list = self.scanline(line, self.position)
+                    command = token_list[0]
+            except StopIteration as si:
+                exception = si
+                raise
             except Exception as e:
-                e.command = getattr(e, 'command', command)
+                import traceback
+                exception = e
+                trace = traceback.format_exc()
+                e.command.trace = trace
+                e.command.error = e
+                raise
+            finally:
+                if not isinstance(exception, StopIteration):
+                    # We'll put this in when we want to start keeping
+                    # unparsed commands around
+                    # self.parser.adopt(command)
+
+                    self.advance()
         return token_list
 
     def advance(self, lines=1):

@@ -896,6 +896,7 @@ def interpret_step_into_python(self, interpreter, ele):
     else:
         interpreter.step = True
         interpreter.parser.scanner = scanner
+        interpreter.next_command = 1
     return True
 
 def interpret_interactive(self, interpreter, ele):
@@ -1969,9 +1970,9 @@ class VisionInterpreter(object):
         browser_options['type'] = browser_options.get('type', 'firefox')
         browser_options['remote'] = browser_options.get('remote', None)
         self.step = False
-        self.acceptable_wait = acceptable_wait or .000001
+        self.acceptable_wait = acceptable_wait
         self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait or .000001
+        self.maximum_wait = maximum_wait
         self.default_output_file=default_output_file
         self.outputters = outputters or [BasicVisionOutput(self)]
         self.verbose = verbose
@@ -2060,23 +2061,23 @@ class VisionInterpreter(object):
         return '\n'.join(l for l in self)
 
     def handle_parse(self):
-        command = None
         try:
             command = self.parser.next()
-        except StopIteration:
+        except StopIteration as si:
             # We don't want to catch StopIterations
+            command = si.command
+            command.error = si
             raise
         except Exception as e:
-            command = getattr(e, 'command', None)
+            command = e.command
             self.errorfound = True
             if not isinstance(e, visionexceptions.VisionException):
                 e = visionexceptions.GarbageInputError(
                     command=command,
                     start=0,
                     message="This is not valid Vision.")
-            if command:
-                command.error = e
-        if command:
+            command.error = e
+        finally:
             command.executed = False
         return command
 
@@ -2154,7 +2155,7 @@ class VisionInterpreter(object):
             # We want stop iterations to propagate to the main loop
             raise
         except Exception as e:
-            command = getattr(e, 'command', None)
+            command = getattr(e, 'command', )
         finally:
             if command:
                 # We can only figure out how long it took to run the
@@ -2254,7 +2255,6 @@ class VisionInterpreter(object):
                     # We rewind the origin scanner, so that errors found
                     # in generated subcommands can be recovered
                     command.origin_scanner.rewind()
-                    command.origin_scanner.toggle_breakpoint()
                 if supercommand and supercommand.subcommands:
                     # the most recent command from our origin
                     # has subcommands.  This means that it's our
@@ -2262,6 +2262,7 @@ class VisionInterpreter(object):
                     # created by the parser (like because of a
                     # dedention) It gets to have our error, too
                     supercommand.error = command.error
+                self.parser.scanner = self.parser.interactive_scanner
         except KeyboardInterrupt as ki:
             self.quit()
         except Exception as e:

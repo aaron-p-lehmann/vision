@@ -7,7 +7,7 @@ focuslibs = {
 
 setup(
     name='vision',
-    version='0.10.352',
+    version='0.10.363',
     packages=find_packages(),
 
     # This requires selenium
@@ -25,6 +25,6 @@ setup(
     # Entry points
     entry_points = {
         'console_scripts': [
-        'vision = vision.vision:main']
+        'vision = vision.visionconsole:main']
     }
 )
