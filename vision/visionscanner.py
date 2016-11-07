@@ -9,9 +9,12 @@ import collections
 import time
 import os
 import os.path
-import readline
+import platform
+if platform.system() not in ["Windows"]:
+    # don't import readline if this is windows
+    import readline
 
-readline.parse_and_bind("tab: complete")
+    readline.parse_and_bind("tab: complete")
 
 # MIE libraries
 import visionparser

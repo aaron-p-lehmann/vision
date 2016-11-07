@@ -1,19 +1,19 @@
 import platform
 from setuptools import setup, find_packages
 
-focuslibs = {
+reqs = {
     'Windows': ['pypiwin32'],
 }
 
 setup(
     name='vision',
-    version='0.10.363',
+    version='0.10.364',
     packages=find_packages(),
 
     # This requires selenium
     install_requires = [
         'selenium',
-        'pillow'] + focuslibs.get(platform.system(), []),
+        'pillow'] + reqs.get(platform.system(), ["readline"]),
 
     # PyPI data
     author = "Aaron Lehmann",
