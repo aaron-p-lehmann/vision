@@ -120,3 +120,6 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         interpreter.run()
     finally:
         interpreter.quit()
+
+if __name__ == "__main__":
+    main()
