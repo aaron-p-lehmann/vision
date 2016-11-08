@@ -1961,8 +1961,10 @@ class VisionInterpreter(object):
         default_output_file='',
         outputters=None,
         browser_options=None,
+        base_url="",
         tests_dir=None,
         results_dir=None,
+        screenshot_dir=None,
         upload_dir=None):
         self.setup()
         if not browser_options:
@@ -1979,7 +1981,9 @@ class VisionInterpreter(object):
         self.errorfound = False
         self._handle = None
         self.browser_options = browser_options
+        self.base_url=base_url
         self.tests_dir = tests_dir
+        self.screenshot_dir = screenshot_dir
         self.results_dir = results_dir
         self.upload_dir = upload_dir
         self.debug = debug
@@ -2068,6 +2072,9 @@ class VisionInterpreter(object):
             command = si.command
             command.error = si
             raise
+        except KeyboardInterrupt as ke:
+            # We don't need the traceback from these
+            raise
         except Exception as e:
             command = e.command
             self.errorfound = True
@@ -2154,8 +2161,6 @@ class VisionInterpreter(object):
         except StopIteration as si:
             # We want stop iterations to propagate to the main loop
             raise
-        except Exception as e:
-            command = getattr(e, 'command', )
         finally:
             if command:
                 # We can only figure out how long it took to run the
@@ -2313,6 +2318,9 @@ class VisionInterpreter(object):
             while first or self.interactivity_enabled:
                 first = False
                 self.handle_commands()
+	except KeyboardInterrupt as ke:
+	    # We don't need a traceback for Ctrl-C
+            pass
         except (Exception, KeyboardInterrupt) as e:
             import traceback
             if self.debug:

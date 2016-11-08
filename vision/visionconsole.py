@@ -45,20 +45,29 @@ def get_args(arguments=None):
         '--root-test-directory',
         help='The directory in which all the tests and asset directories exist',
         default=os.path.abspath(os.getcwd()))
+    parser.add_argument(
+        '--root-url',
+        help='The base url from which to start the test.',
+        default="")
     if hasattr(arguments, 'root_test_directory'):
         # this is the second pass
         parser.add_argument(
             '--upload-directory',
             help='The directory where files to be uploaded will be found.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='upload')
+            default='')
         parser.add_argument(
             '--test-directory',
             help='The directory where files to be test files will be found.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='tests')
+            default='')
         parser.add_argument(
             '--results-directory',
             help='The directory where result files will be written.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='results')
+            default='')
+    if hasattr(arguments, 'results_directory'):
+        parser.add_argument(
+            '--screenshot-directory',
+            help='The directory where screenshots files will be written.  This is relative to %s.  If it does not exist, it will be created.' % arguments.results_directory,
+            default='')
     if hasattr(arguments, 'test_directory'):
         # this is the third pass
         argv = sys.argv[1:]
@@ -74,8 +83,9 @@ def get_args(arguments=None):
     return arguments
 
 def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser):
-    # Get the arguments, in three passes
+    # Get the arguments, in four passes
     arguments = get_args()
+    arguments = get_args(arguments)
     arguments = get_args(arguments)
     arguments = get_args(arguments)
 
@@ -86,12 +96,17 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         timing=arguments.timing,
         maximum_wait=arguments.maximum_time,
         acceptable_wait=arguments.acceptable_time,
+        base_url=arguments.root_url,
         tests_dir=os.path.join(
             arguments.root_test_directory,
             arguments.test_directory),
         upload_dir=os.path.join(
             arguments.root_test_directory,
             arguments.upload_directory),
+        screenshot_dir=os.path.join(
+            arguments.root_test_directory,
+            arguments.results_directory,
+            arguments.screenshot_directory),
         results_dir=os.path.join(
             arguments.root_test_directory,
             arguments.results_directory),
@@ -116,6 +131,10 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
                     "internetexplorer": "iedriver"}))
     parser.interactive_scanner.addline([
         'Load test "%s"' % test for test in reversed(arguments.testfiles)])
+    if arguments.root_url:
+        parser.subcommand_scanner.addline([
+            'Navigate to "%s"' % arguments.root_url])
+    parser.scanner=parser.subcommand_scanner
     try:
         interpreter.run()
     finally:
