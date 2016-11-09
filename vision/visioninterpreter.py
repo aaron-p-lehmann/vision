@@ -1965,12 +1965,16 @@ class VisionInterpreter(object):
         tests_dir=None,
         results_dir=None,
         screenshot_dir=None,
-        upload_dir=None):
+        upload_dir=None,
+        webdriver=None):
         self.setup()
-        if not browser_options:
-            browser_options = {}
-        browser_options['type'] = browser_options.get('type', 'firefox')
-        browser_options['remote'] = browser_options.get('remote', None)
+        if not webdriver:
+            if not browser_options:
+                browser_options = {}
+            browser_options['type'] = browser_options.get('type', 'firefox')
+            browser_options['remote'] = browser_options.get('remote', None)
+        else:
+            self.webdriver = webdriver
         self.step = False
         self.acceptable_wait = acceptable_wait or .000001
         self.interactivity_enabled = True
@@ -2060,6 +2064,11 @@ class VisionInterpreter(object):
             profile_options.update(self.browser_options)
             self._webdriver=self.browsers[profile_options['type']](profile_options)
         return self._webdriver
+
+    @webdriver.setter
+    def webdriver(self, webdriver):
+        self._webdriver = webdriver
+        return webdriver
 
     def compile(self):
         return '\n'.join(l for l in self)
