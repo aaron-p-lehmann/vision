@@ -134,7 +134,7 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
     if arguments.root_url:
         parser.subcommand_scanner.addline([
             'Navigate to "%s"' % arguments.root_url])
-    parser.scanner=parser.subcommand_scanner
+        parser.scanner=parser.subcommand_scanner
     try:
         interpreter.run()
     finally:
