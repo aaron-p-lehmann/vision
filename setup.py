@@ -2,18 +2,19 @@ import platform
 from setuptools import setup, find_packages
 
 reqs = {
-    'Windows': ['pypiwin32'],
+    'Windows': ['pypiwin32', 'pyreadline'],
+    'Darwin': ['gnureadline']
 }
 
 setup(
     name='vision',
-    version='0.10.382',
+    version='0.10.384',
     packages=find_packages(),
 
     # This requires selenium
     install_requires = [
         'selenium',
-        'pillow'] + reqs.get(platform.system(), ["readline"]),
+        'pillow'] + reqs.get(platform.system(), []),
 
     # PyPI data
     author = "Aaron Lehmann",

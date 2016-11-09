@@ -10,11 +10,14 @@ import time
 import os
 import os.path
 import platform
-if platform.system() not in ["Windows"]:
-    # don't import readline if this is windows
+if platform.system() in ["Darwin"]:
+    # Mac OS is dumb and uses netbsd's readline, so we need to import a
+    # different lib
+    import gnureadline as readline
+else:
     import readline
 
-    readline.parse_and_bind("tab: complete")
+readline.parse_and_bind("tab: complete")
 
 # MIE libraries
 import visionparser
