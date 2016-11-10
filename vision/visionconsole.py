@@ -159,6 +159,7 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         breakpoints_dict = {}
         for breakpoint in arguments.stop_at:
             filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
+            filename = filename if filename.endswith(".vision") else filename + ".vision"
             breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
             breakpoints_dict[filename].update([breakpoint])
 
