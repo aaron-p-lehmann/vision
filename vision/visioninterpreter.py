@@ -2074,14 +2074,10 @@ class VisionInterpreter(object):
         return '\n'.join(l for l in self)
 
     def handle_parse(self):
+        command = None
         try:
             command = self.parser.next()
-        except StopIteration as si:
-            # We don't want to catch StopIterations
-            command = si.command
-            command.error = si
-            raise
-        except KeyboardInterrupt as ke:
+        except (StopIteration, KeyboardInterrupt) as e:
             # We don't need the traceback from these
             raise
         except Exception as e:
@@ -2094,7 +2090,8 @@ class VisionInterpreter(object):
                     message="This is not valid Vision.")
             command.error = e
         finally:
-            command.executed = False
+            if command:
+                command.executed = False
         return command
 
     def check_page_ready(self, command):

@@ -18,6 +18,7 @@ else:
     import readline
 
 readline.parse_and_bind("tab: complete")
+readline.read_history_file(os.path.expanduser("~/.vision_history"))
 
 # MIE libraries
 import visionparser
@@ -587,5 +588,7 @@ class InteractiveVisionScanner(VisionScanner):
             else:
                 # If it's a subcommand, when we're done, we're done
                 raise
+        finally:
+            readline.write_history_file(os.path.expanduser("~/.vision_history"))
         return tokens
 

@@ -3,6 +3,7 @@ import argparse
 import os
 import os.path
 import sys
+import pkg_resources
 
 def get_args(arguments=None):
     argv = [arg for arg in sys.argv[1:] if arg not in ('-h', '--help')]
@@ -49,6 +50,22 @@ def get_args(arguments=None):
         '--root-url',
         help='The base url from which to start the test.',
         default="")
+    if hasattr(arguments, 'testfiles'):
+        parser.add_argument(
+            '--stop-at',
+            help=(
+                'Sets breakpoints in files to be loaded.  The format is '
+                '"[filename:]number or keyword".  If filename is provided, '
+                'breakpoints are set in that filename.  If it is not, the '
+                'breakpoints are set in the first file given on the command '
+                'line.  If a number is given, the breakpoint is set at that '
+                'line number of the file.  If a keyword is given, breakpoints '
+                'are set at every line in that file that use that keyword.  '
+                'This argument is only available if testfiles are provided.  '
+                'This arguments can be given multiple times to set more than '
+                'one set of breakpoints.  The files available to have '
+                'breakpoints placed are: %s' % arguments.testfiles),
+            action='append')
     if hasattr(arguments, 'root_test_directory'):
         # this is the second pass
         parser.add_argument(
@@ -82,7 +99,12 @@ def get_args(arguments=None):
         arguments.root_test_directory)
     return arguments
 
-def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser):
+def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser,program="vision"):
+    # Print the version
+    print "%s %s" % (
+        program.capitalize(),
+        pkg_resources.get_distribution(program.lower()))
+
     # Get the arguments, in four passes
     arguments = get_args()
     arguments = get_args(arguments)
@@ -131,6 +153,25 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
                     "internetexplorer": "iedriver"}))
     parser.interactive_scanner.addline([
         'Load test "%s"' % test for test in reversed(arguments.testfiles)])
+    if getattr(arguments, 'stop_at', None):
+        # Make sure every breakpoint has a filename.  If none was
+        # provided, then use the most recent file
+        breakpoints_dict = {}
+        for breakpoint in arguments.stop_at:
+            filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
+            breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
+            breakpoints_dict[filename].update([breakpoint])
+
+        # Now add the commands to add the breakpoints.
+        for filename, breakpoints in breakpoints_dict.items():
+            parser.interactive_scanner.addline([
+                'Break "%s"' % ":".join([filename, breakpoint]) for
+                breakpoint in breakpoints])
+    else:
+        # There are no breakpoints, add a finish to the scanner
+        # the test will run to completion
+        parser.interactive_scanner.addline(["Finish"])
+
     if arguments.root_url:
         parser.subcommand_scanner.addline([
             'Navigate to "%s"' % arguments.root_url])
