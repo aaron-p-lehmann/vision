@@ -830,7 +830,8 @@ def interpret_load_test(self, interpreter, ele, running=True):
                         filename=filename,
                         filish=testfile,
                         tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
-                        parser=interpreter.parser)
+                        parser=interpreter.parser,
+                        **interpreter.parser.normal_times)
             except IOError, ioe:
                 interpreter.parser.scanner = interpreter.parser.file_scanner_class(
                     filename=filename,
@@ -1428,11 +1429,17 @@ class InteractiveParser(visionparser.VisionParser):
     subcommand_scanner_name = '<subcommand>'
     interactive_scanner_name = '<interactive>'
 
-    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveVisionScanner, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None):
+    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveVisionScanner, file_scanner_class=visionscanner.VisionFileScanner, interactive_maximum_time=5, interactive_allowable_time=1, maximum_time=15, allowable_time=3, interpreter=None):
         self.interactive_scanner_class=interactive_scanner_class
         self.file_scanner_class=file_scanner_class
         self.interpreter=interpreter
         interpreter.parser=self
+        self.interactive_times = {
+            'maximum_time': interactive_maximum_time,
+            'allowable_time': interactive_allowable_time }
+        self.normal_times = {
+            'maximum_time': maximum_time,
+            'allowable_time': allowable_time }
 
         scanners = scanners if scanners else []
 
@@ -1443,11 +1450,13 @@ class InteractiveParser(visionparser.VisionParser):
             name=self.subcommand_scanner_name,
             tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
             subcommand=True,
-            parser=self)
+            parser=self,
+            **self.normal_times)
         interactive_scanner = interactive_scanner_class(
             name=self.interactive_scanner_name,
             tokenizer=visionscanner.InteractiveTokenizer(commandtype=visionparser.InterpreterCommand),
-            parser=self)
+            parser=self,
+            **self.interactive_times)
         scanners = [self._subcommand_scanner, interactive_scanner] + scanners
         self.scanners = collections.OrderedDict()
 
@@ -1956,8 +1965,6 @@ class VisionInterpreter(object):
         verbose=False,
         debug=False,
         timing=False,
-        acceptable_wait=3,
-        maximum_wait=15,
         default_output_file='',
         outputters=None,
         browser_options=None,
@@ -1976,9 +1983,7 @@ class VisionInterpreter(object):
         else:
             self.webdriver = webdriver
         self.step = False
-        self.acceptable_wait = acceptable_wait or .000001
         self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait or .000001
         self.default_output_file=default_output_file
         self.outputters = outputters or [BasicVisionOutput(self)]
         self.verbose = verbose
@@ -2004,7 +2009,7 @@ class VisionInterpreter(object):
 
     def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
         maximum_wait = maximum_wait or command.wait
-        acceptable_wait = acceptable_wait or self.acceptable_wait
+        acceptable_wait = acceptable_wait or self.parser.scanner.allowable_time
         ele = None
 
         def ele_is_ready(driver):
@@ -2195,9 +2200,9 @@ class VisionInterpreter(object):
                     'total': command_total
                 }
 
-                if command_total > self.acceptable_wait:
+                if command_total > self.parser.scanner.allowable_time:
                     warning = {
-                        'title': "Took %f seconds, expected no more than %f" % (command_total, self.acceptable_wait),
+                        'title': "Took %f seconds, expected no more than %f" % (command_total, self.parser.scanner.allowable_time),
                         'subwarnings': []
                     }
                     if command.check_readyState:
@@ -2324,8 +2329,8 @@ class VisionInterpreter(object):
             while first or self.interactivity_enabled:
                 first = False
                 self.handle_commands()
-	except KeyboardInterrupt as ke:
-	    # We don't need a traceback for Ctrl-C
+        except KeyboardInterrupt as ke:
+# We don't need a traceback for Ctrl-C
             pass
         except (Exception, KeyboardInterrupt) as e:
             import traceback
@@ -2445,13 +2450,4 @@ class VisionInterpreter(object):
     @flags.setter
     def flags(self, flags):
         self._flags = flags
-
-if __name__ == "__main__":
-    interpreter = VisionInterpreter(
-        verbose=False,
-        scope_after_error=False,
-        maximum_wait=15,
-        acceptable_wait=3)
-    parser=InteractiveParser(interpreter=interpreter)
-    interpreter.run()
 

@@ -28,16 +28,6 @@ def get_args(arguments=None):
         action='store_true',
         default=False)
     parser.add_argument(
-        '--acceptable-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run, a warning is generated',
-        default=3)
-    parser.add_argument(
-        '--maximum-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run, the command fails',
-        default=15)
-    parser.add_argument(
         '--timing',
         help='Sets vision to print timing information when a command takes longer than acceptable-time',
         action='store_true',
@@ -50,9 +40,29 @@ def get_args(arguments=None):
         '--root-url',
         help='The base url from which to start the test.',
         default="")
+    parser.add_argument(
+        '--allowable-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run, a warning is generated',
+        default=3)
+    parser.add_argument(
+        '--maximum-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run, the command fails',
+        default=15)
+    parser.add_argument(
+        '--interactive-allowable-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run in interactive mode, a warning is generated',
+        default=1)
+    parser.add_argument(
+        '--interactive-maximum-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run in interactive, the command fails',
+        default=5)
     if hasattr(arguments, 'testfiles'):
         parser.add_argument(
-            '--stop-at',
+            '--breakpoint',
             help=(
                 'Sets breakpoints in files to be loaded.  The format is '
                 '"[filename:]number or keyword".  If filename is provided, '
@@ -105,8 +115,9 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         program.capitalize(),
         pkg_resources.get_distribution(program.lower()))
 
-    # Get the arguments, in four passes
+    # Get the arguments, in five passes
     arguments = get_args()
+    arguments = get_args(arguments)
     arguments = get_args(arguments)
     arguments = get_args(arguments)
     arguments = get_args(arguments)
@@ -116,8 +127,6 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         verbose=False,
         debug=arguments.debug,
         timing=arguments.timing,
-        maximum_wait=arguments.maximum_time,
-        acceptable_wait=arguments.acceptable_time,
         base_url=arguments.root_url,
         tests_dir=os.path.join(
             arguments.root_test_directory,
@@ -136,7 +145,11 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
             'remote': arguments.remote,
             'type': arguments.browser})
     parser=parser_type(
-        interpreter=interpreter)
+        interpreter=interpreter,
+        interactive_maximum_time=arguments.interactive_maximum_time,
+        interactive_allowable_time=arguments.interactive_allowable_time,
+        maximum_time=arguments.maximum_time,
+        allowable_time=arguments.allowable_time)
 
     try:
         # Try to make the webdriver, and catch failures with a vague
@@ -151,27 +164,29 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
                     "chrome": "chromedriver",
                     "firefox": "geckodriver",
                     "internetexplorer": "iedriver"}))
+
     parser.interactive_scanner.addline([
         'Load test "%s"' % test for test in reversed(arguments.testfiles)])
-    if getattr(arguments, 'stop_at', None):
-        # Make sure every breakpoint has a filename.  If none was
-        # provided, then use the most recent file
-        breakpoints_dict = {}
-        for breakpoint in arguments.stop_at:
-            filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
-            filename = filename if filename.endswith(".vision") else filename + ".vision"
-            breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
-            breakpoints_dict[filename].update([breakpoint])
+    if arguments.testfiles:
+        if getattr(arguments, 'breakpoint', None):
+            # Make sure every breakpoint has a filename.  If none was
+            # provided, then use the most recent file
+            breakpoints_dict = {}
+            for breakpoint in arguments.breakpoint:
+                filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
+                filename = filename if filename.endswith(".vision") else filename + ".vision"
+                breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
+                breakpoints_dict[filename].update([breakpoint])
 
-        # Now add the commands to add the breakpoints.
-        for filename, breakpoints in breakpoints_dict.items():
-            parser.interactive_scanner.addline([
-                'Break "%s"' % ":".join([filename, breakpoint]) for
-                breakpoint in breakpoints])
-    else:
-        # There are no breakpoints, add a finish to the scanner
-        # the test will run to completion
-        parser.interactive_scanner.addline(["Finish"])
+            # Now add the commands to add the breakpoints.
+            for filename, breakpoints in breakpoints_dict.items():
+                parser.interactive_scanner.addline([
+                    'Break "%s"' % ":".join([filename, breakpoint]) for
+                    breakpoint in breakpoints])
+        else:
+            # There are no breakpoints, add a finish to the scanner
+            # the test will run to completion
+            parser.interactive_scanner.addline(["Finish"])
 
     if arguments.root_url:
         parser.subcommand_scanner.addline([

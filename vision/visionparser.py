@@ -1547,7 +1547,7 @@ class Command(InputPhrase):
         try:
             return float(str(next(wait_iter).value))
         except StopIteration, si:
-            return self.parser.interpreter.maximum_wait
+            return self.parser.scanner.maximum_time
 
     @property
     def skip(self):

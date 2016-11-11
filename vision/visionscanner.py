@@ -18,7 +18,14 @@ else:
     import readline
 
 readline.parse_and_bind("tab: complete")
-readline.read_history_file(os.path.expanduser("~/.vision_history"))
+history_path = os.path.expanduser("~/.vision_history")
+try:
+    readline.read_history_file(history_path)
+except IOError as ioe:
+    if ioe.errno == 2:
+        # The file wasn't there, make it and try again
+        open(history_path, 'w+').write('')
+        readline.read_history_file(history_path)
 
 # MIE libraries
 import visionparser
@@ -251,12 +258,14 @@ class VisionScanner(object):
     tokenizer, although giving it a parts is a good idea.
     """
 
-    def __init__(self, name, tokenizer, parser=None):
+    def __init__(self, name, tokenizer, parser=None, maximum_time=15, allowable_time=3):
         self.parser = parser
         self.name = name
         self.tokenizer = tokenizer
         self.lines = []
         self.position = 0
+        self.maximum_time=maximum_time
+        self.allowable_time=allowable_time
         tokenizer.scanner = self
 
     def __iter__(self):
@@ -359,12 +368,14 @@ class VisionFileScanner(VisionScanner):
         'whitespace': '(?P<whitespace>[ \n])',
     }
 
-    def __init__(self, filish, tokenizer, filename=None, subcommand=False, parser=None):
+    def __init__(self, filish, tokenizer, filename=None, subcommand=False, parser=None, *args, **kwargs):
         file_name = filename or filish.name
         super(VisionFileScanner, self).__init__(
             name=file_name,
             parser=parser,
-            tokenizer=tokenizer)
+            tokenizer=tokenizer,
+            *args,
+            **kwargs)
         self.addline(filish)
 
     def get_regexps(self):
@@ -539,11 +550,13 @@ class InteractiveVisionScanner(VisionScanner):
     # We use InterpreterCommands
     commandtype = visionparser.InterpreterCommand
 
-    def __init__(self, name, tokenizer, subcommand=False, parser=None):
+    def __init__(self, name, tokenizer, subcommand=False, parser=None, *args, **kwargs):
         super(InteractiveVisionScanner, self).__init__(
             name=name,
             tokenizer=tokenizer,
-            parser=parser)
+            parser=parser,
+            *args,
+            **kwargs)
         self.subcommand = subcommand
 
     def next(self):
