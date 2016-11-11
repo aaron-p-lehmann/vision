@@ -5,8 +5,12 @@ import os.path
 import sys
 import pkg_resources
 
-def get_args(arguments=None):
-    argv = [arg for arg in sys.argv[1:] if arg not in ('-h', '--help')]
+def get_args(arguments=None, parse_help=True):
+    if parse_help:
+        argv = sys.argv[1:]
+    else:
+        # we don't want to give help info on this pass
+        argv = [arg for arg in sys.argv[1:] if arg not in ('-h', '--help')]
 
     parser = argparse.ArgumentParser(
         description="An interpreted language for writing Selenium tests in English.",
@@ -96,9 +100,6 @@ def get_args(arguments=None):
             help='The directory where screenshots files will be written.  This is relative to %s.  If it does not exist, it will be created.' % arguments.results_directory,
             default='')
     if hasattr(arguments, 'test_directory'):
-        # this is the third pass
-        argv = sys.argv[1:]
-
         parser.add_argument(
             'testfiles',
             help='The files to be loaded, in order.  These will be relative to %s.' % os.path.join(arguments.root_test_directory, arguments.test_directory),
@@ -116,10 +117,10 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         pkg_resources.get_distribution(program.lower()))
 
     # Get the arguments, in five passes
-    arguments = get_args()
-    arguments = get_args(arguments)
-    arguments = get_args(arguments)
-    arguments = get_args(arguments)
+    arguments = get_args(parse_help=False)
+    arguments = get_args(arguments, parse_help=False)
+    arguments = get_args(arguments, parse_help=False)
+    arguments = get_args(arguments, parse_help=False)
     arguments = get_args(arguments)
 
     # Make the necessary directories, if they don't exist
