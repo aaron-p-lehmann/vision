@@ -6,18 +6,14 @@ import sys
 import pkg_resources
 
 def get_args(arguments=None, parse_help=True):
-    if parse_help:
-        argv = sys.argv[1:]
-    else:
-        # we don't want to give help info on this pass
-        argv = [arg for arg in sys.argv[1:] if arg not in ('-h', '--help')]
-
     parser = argparse.ArgumentParser(
         description="An interpreted language for writing Selenium tests in English.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        add_help=parse_help)
     parser.add_argument(
-        '--remote',
-        help="The url of the remote webdriver hub, if a remote is to be used")
+        'testfiles',
+        help='The files to be loaded, in order.  These will be relative to %s.' % os.getcwd(),
+        nargs='*')
     parser.add_argument(
         '--browser',
         default="chrome",
@@ -27,43 +23,12 @@ def get_args(arguments=None, parse_help=True):
             "to webdriver, and thus requires no downloads beyond the browser"
             "itself.  Other browsers require third-party helper programs."))
     parser.add_argument(
-        '--debug',
-        help='Sets vision to print tracebacks when commands fail',
-        action='store_true',
-        default=False)
+        '--remote',
+        help="The url of the remote webdriver hub, if a remote is to be used")
     parser.add_argument(
-        '--timing',
-        help='Sets vision to print timing information when a command takes longer than acceptable-time',
-        action='store_true',
-        default=False)
-    parser.add_argument(
-        '--root-test-directory',
-        help='The directory in which all the tests and asset directories exist',
-        default=os.path.abspath(os.getcwd()))
-    parser.add_argument(
-        '--root-url',
-        help='The base url from which to start the test.',
+        '--start-url',
+        help='The url from which to start the test.',
         default="")
-    parser.add_argument(
-        '--allowable-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run, a warning is generated',
-        default=3)
-    parser.add_argument(
-        '--maximum-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run, the command fails',
-        default=15)
-    parser.add_argument(
-        '--interactive-allowable-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run in interactive mode, a warning is generated',
-        default=1)
-    parser.add_argument(
-        '--interactive-maximum-time',
-        type=float,
-        help='If a command takes longer than this (in seconds) to run in interactive, the command fails',
-        default=5)
     if hasattr(arguments, 'testfiles'):
         parser.add_argument(
             '--breakpoint',
@@ -80,34 +45,38 @@ def get_args(arguments=None, parse_help=True):
                 'one set of breakpoints.  The files available to have '
                 'breakpoints placed are: %s' % arguments.testfiles),
             action='append')
-    if hasattr(arguments, 'root_test_directory'):
-        # this is the second pass
-        parser.add_argument(
-            '--upload-directory',
-            help='The directory where files to be uploaded will be found.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='')
-        parser.add_argument(
-            '--test-directory',
-            help='The directory where files to be test files will be found.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='')
-        parser.add_argument(
-            '--results-directory',
-            help='The directory where result files will be written.  This is relative to %s.  If it does not exist, it will be created.' % arguments.root_test_directory,
-            default='')
-    if hasattr(arguments, 'results_directory'):
-        parser.add_argument(
-            '--screenshot-directory',
-            help='The directory where screenshots files will be written.  This is relative to %s.  If it does not exist, it will be created.' % arguments.results_directory,
-            default='')
-    if hasattr(arguments, 'test_directory'):
-        parser.add_argument(
-            'testfiles',
-            help='The files to be loaded, in order.  These will be relative to %s.' % os.path.join(arguments.root_test_directory, arguments.test_directory),
-            nargs='*')
+    parser.add_argument(
+        '--debug',
+        help='Sets vision to print tracebacks when commands fail',
+        action='store_true',
+        default=False)
+    parser.add_argument(
+        '--timing',
+        help='Sets vision to print timing information when a command takes longer than acceptable-time',
+        action='store_true',
+        default=False)
+    parser.add_argument(
+        '--warning-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run, a warning is generated',
+        default=3)
+    parser.add_argument(
+        '--maximum-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run, the command fails',
+        default=15)
+    parser.add_argument(
+        '--interactive-warning-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run in interactive mode, a warning is generated',
+        default=1)
+    parser.add_argument(
+        '--interactive-maximum-time',
+        type=float,
+        help='If a command takes longer than this (in seconds) to run in interactive, the command fails',
+        default=5)
 
-    arguments, remainder = parser.parse_known_args(argv)
-    arguments.root_test_directory = os.path.expanduser(
-        arguments.root_test_directory)
+    arguments, remainder = parser.parse_known_args()
     return arguments
 
 def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser,program="vision"):
@@ -118,9 +87,6 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
 
     # Get the arguments, in five passes
     arguments = get_args(parse_help=False)
-    arguments = get_args(arguments, parse_help=False)
-    arguments = get_args(arguments, parse_help=False)
-    arguments = get_args(arguments, parse_help=False)
     arguments = get_args(arguments)
 
     # Make the necessary directories, if they don't exist
@@ -128,29 +94,16 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         verbose=False,
         debug=arguments.debug,
         timing=arguments.timing,
-        base_url=arguments.root_url,
-        tests_dir=os.path.join(
-            arguments.root_test_directory,
-            arguments.test_directory),
-        upload_dir=os.path.join(
-            arguments.root_test_directory,
-            arguments.upload_directory),
-        screenshot_dir=os.path.join(
-            arguments.root_test_directory,
-            arguments.results_directory,
-            arguments.screenshot_directory),
-        results_dir=os.path.join(
-            arguments.root_test_directory,
-            arguments.results_directory),
+        base_url=arguments.start_url,
         browser_options={
             'remote': arguments.remote,
             'type': arguments.browser})
     parser=parser_type(
         interpreter=interpreter,
         interactive_maximum_time=arguments.interactive_maximum_time,
-        interactive_allowable_time=arguments.interactive_allowable_time,
+        interactive_allowable_time=arguments.interactive_warning_time,
         maximum_time=arguments.maximum_time,
-        allowable_time=arguments.allowable_time)
+        allowable_time=arguments.warning_time)
 
     try:
         # Try to make the webdriver, and catch failures with a vague
@@ -189,9 +142,9 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
             # the test will run to completion
             parser.interactive_scanner.addline(["Finish"])
 
-    if arguments.root_url:
+    if arguments.start_url:
         parser.subcommand_scanner.addline([
-            'Navigate to "%s"' % arguments.root_url])
+            'Navigate to "%s"' % arguments.start_url])
         parser.scanner=parser.subcommand_scanner
     try:
         interpreter.run()
