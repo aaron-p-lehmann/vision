@@ -1197,6 +1197,68 @@ def interpret_quit(self, interpreter, ele):
     sys.exit()
     return True
 
+def interpret_help(self, interpreter, ele):
+    # The keywords, grouped by column headers
+    groups_keywords = collections.OrderedDict([
+        ('Nouns', [
+            lambda keyword, keyword_type: keyword_type == visionparser.Noun, collections.OrderedDict(), 0, 0]),
+        ('Verbs', [
+            lambda keyword, keyword_type: keyword_type == visionparser.Verb, collections.OrderedDict(), 1, 0]),
+        ('Interpreter Verbs', [
+            lambda keyword, keyword_type: keyword_type == visionparser.InterpreterVerb, collections.OrderedDict(), 1, 0]),])
+
+    # Doug wants a seperate group for Assertions, but that'll take some
+    # refactoring of things, so punt for now
+
+    # The groups and helps, grouped by keywords
+    keywords_groups = {}
+
+    # populate the columns, and figure out widths
+    longest_col = [0] * 3
+    tokens = interpreter.parser.interactive_scanner.tokenizer.get_token_mapper().items()
+    for (keyword, data) in tokens:
+        for heading, (test, group, column, column_width) in groups_keywords.iteritems():
+            if test(keyword, data[0]):
+                group[keyword] = data[1].get('help', 'There is no help text available for this command')
+                groups_keywords[heading][3] = max(column_width, len(keyword))
+                keywords_groups[keyword] = (heading, data[1])
+
+    if self.value:
+        scan_keyword = '_'.join(str(self.value).lower().split(' '))
+        if scan_keyword in dict(tokens):
+            kw_data = dict(tokens)[scan_keyword]
+            print "%(keyword)s - (%(type)s) %(help)s" % {
+                'keyword': str(self.value),
+                'type': keywords_groups[scan_keyword][0][:-1],
+                'help': groups_keywords[keywords_groups[scan_keyword][0]][1][scan_keyword]}
+        else:
+            print "'%s' is not valid Vision" % str(self.value)
+    else:
+        # Set up the structure to hold the tokens in 
+        # Get tokens in the language
+        header_format = "{Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
+            groups_keywords['Nouns'][3],
+            groups_keywords['Verbs'][3],
+            groups_keywords['Interpreter Verbs'][3])
+        column_format = "  {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
+            groups_keywords['Nouns'][3],
+            groups_keywords['Verbs'][3],
+            groups_keywords['Interpreter Verbs'][3])
+        longest_column_length = max(
+            len(groups_keywords['Nouns'][1]),
+            len(groups_keywords['Verbs'][1]),
+            len(groups_keywords['Interpreter Verbs'][1]))
+        print header_format.format(
+            **(dict((n, n) for n in groups_keywords.keys())))
+        rows = zip(
+            groups_keywords['Nouns'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Nouns'][1]))),
+            groups_keywords['Verbs'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Verbs'][1]))),
+            groups_keywords['Interpreter Verbs'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Interpreter Verbs'][1]))),)
+        for row_data in rows:
+            print column_format.format(
+                **(dict(zip(groups_keywords.keys(), [' '.join(kw.capitalize().split('_')) for kw in row_data]))))
+    return True
+
 def interpret_wait(self, interpreter, ele):
     import time
     time.sleep(int(str(self.value)))
@@ -1833,6 +1895,7 @@ class VisionInterpreter(object):
                 'show all input': collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=True) ),
                 'skip': collections.defaultdict( lambda: functools.partial(interpret_skip) ),
                 'quit': collections.defaultdict( lambda: interpret_quit ),
+                'help': collections.defaultdict( lambda: interpret_help ),
             },
         }),
         (visionparser.Skip, {

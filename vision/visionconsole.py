@@ -115,11 +115,11 @@ def get_args(arguments=None, parse_help=True):
 
     return arguments
 
-def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser,program="vision"):
+def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser, programs=("vision",)):
     # Print the version
-    print "%s %s" % (
-        program.capitalize(),
-        pkg_resources.get_distribution(program.lower()))
+    for program in programs:
+        dist_info = pkg_resources.get_distribution(program.lower())
+        print '-'.join([program, dist_info.version])
 
     # Get the arguments, in five passes
     arguments = get_args(parse_help=False)

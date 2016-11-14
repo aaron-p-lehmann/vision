@@ -534,6 +534,7 @@ class InteractiveTokenizer(BasicTokenizer):
         'step_into_python': [visionparser.InterpreterVerb, {'cant_have': (visionparser.Literal,)}],
         'quit': [visionparser.InterpreterVerb, {}],
         'finish': [visionparser.InterpreterVerb, {'cant_have':[visionparser.Literal]}],
+        'help': [visionparser.InterpreterVerb, {'cant_have': {visionparser.Literal: 2}}],
     }
 
     def get_token_mapper(self):
