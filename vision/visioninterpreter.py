@@ -1236,11 +1236,12 @@ def interpret_help(self, interpreter, ele):
     else:
         # Set up the structure to hold the tokens in 
         # Get tokens in the language
-        header_format = "{Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
+        print "Keywords:"
+        header_format = "    {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
             groups_keywords['Nouns'][3],
             groups_keywords['Verbs'][3],
             groups_keywords['Interpreter Verbs'][3])
-        column_format = "  {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
+        column_format = "      {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
             groups_keywords['Nouns'][3],
             groups_keywords['Verbs'][3],
             groups_keywords['Interpreter Verbs'][3])
@@ -1257,6 +1258,11 @@ def interpret_help(self, interpreter, ele):
         for row_data in rows:
             print column_format.format(
                 **(dict(zip(groups_keywords.keys(), [' '.join(kw.capitalize().split('_')) for kw in row_data]))))
+
+        print
+        print "Example:"
+        print """    Click the "Submit" button"""
+        print """    Type "Hello" in the textfield"""
     return True
 
 def interpret_wait(self, interpreter, ele):
