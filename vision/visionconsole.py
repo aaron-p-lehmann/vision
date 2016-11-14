@@ -4,6 +4,9 @@ import os
 import os.path
 import sys
 import pkg_resources
+import selenium
+import time
+import urlparse
 
 def get_args(arguments=None, parse_help=True):
     parser = argparse.ArgumentParser(
@@ -24,7 +27,12 @@ def get_args(arguments=None, parse_help=True):
             "itself.  Other browsers require third-party helper programs."))
     parser.add_argument(
         '--remote',
-        help="The url of the remote webdriver hub, if a remote is to be used")
+        help=(
+            "The url of the remote webdriver hub, if a remote is to be "
+            "used.  This will default to using port 4444 and a path of "
+            "/wd/hub, because that is the path Selenium hubs run on.  It "
+            "will ALWAYS use http as the protocol, because webdrivers don't "
+            "support anything else."))
     parser.add_argument(
         '--start-url',
         help='The url from which to start the test.',
@@ -77,6 +85,34 @@ def get_args(arguments=None, parse_help=True):
         default=5)
 
     arguments, remainder = parser.parse_known_args()
+    if arguments.remote:
+        # provide proper default protocol and path for connecting to a
+        # selenium hub
+        try:
+            protocol, url = arguments.remote.split("://", 1)
+        except ValueError as ve:
+            # there is not protocol provided, use 'http'
+            protocol, url = 'http', arguments.remote
+        finally:
+            # Selenium doesn't support any protocol except for http
+            protocol = "http"
+        try:
+            server, path = url.split("/", 1)
+        except ValueError as ve:
+            # there's no path, use '/wd/hub'
+            server, path = url, '/wd/hub'
+        try:
+            server, port = server.split(":")
+        except ValueError as ve:
+            # there's no port, use '4444'
+            server, port = server, "4444"
+        try:
+            filepath, querystring = path.split("?", 1)
+        except ValueError as ve:
+            # there's no querystring, use ''
+            filepath, querystring = path, ""
+        arguments.remote = urlparse.urlunparse([protocol, server + ":" + port, path] + ([""] * 3))
+
     return arguments
 
 def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visioninterpreter.InteractiveParser,program="vision"):
@@ -109,15 +145,38 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         # Try to make the webdriver, and catch failures with a vague
         # message, then exit.  Later, we'll figure out how to make the
         # message more informative.
-        interpreter.webdriver
+        found_node = False
+        while not found_node:
+            try:
+                if arguments.remote:
+                    print (
+                        "Starting a driver on a remote node.  If we "
+                        "can't connect to the address you gave (%s), we'll "
+                        "wait indefinitely for one to be available there") % arguments.remote
+                interpreter.webdriver
+                found_node = True
+            except selenium.common.exceptions.WebDriverException as wde:
+                timeout_msg = "Error forwarding the new session"
+                if arguments.remote and timeout_msg in str(wde):
+                    # if we failed due to timeout 
+                    # sleep for 5 seconds, then try again
+                    time.sleep(5)
+                else:
+                    # It's some other kind of exception, raise it
+                    raise
     except Exception as e:
-        sys.exit("Something went wrong with setting up the Selenium "
+        msg = ("Something went wrong with setting up the Selenium "
             "webdriver.  Make sure you have the right version of the browser "
-            "you chose (%s), and the driver program (%s)." % (
+            "you chose (%s), and the driver program (%s).") % (
                 arguments.browser, {
                     "chrome": "chromedriver",
                     "firefox": "geckodriver",
-                    "internetexplorer": "iedriver"}))
+                    "internetexplorer": "iedriver"})
+        if arguments.debug:
+            print msg
+            raise
+        else:
+            sys.exit(msg)
 
     parser.interactive_scanner.addline([
         'Load test "%s"' % test for test in reversed(arguments.testfiles)])
