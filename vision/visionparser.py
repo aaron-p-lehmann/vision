@@ -501,7 +501,7 @@ class FileLiteral(Literal):
             filename)
         try:
             content = ""
-            if self.command.parser.interpreter.upload_dir is not None:
+            if self.command.parser.interpreter.upload_dir:
                 try:
                     os.makedirs(self.command.parser.interpreter.upload_dir)
                 except OSError as ose:

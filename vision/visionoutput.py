@@ -89,7 +89,7 @@ class VisionOutput(object):
                 # Save this for when there are better messages on our exceptions
                 # output.print_comment(str(command.error))
                 output.print_subcomment("The command was invalid Vision")
-        if getattr(command, 'capture', None) and output.interpreter.screenshot_dir is not None:
+        if getattr(command, 'capture', None) and output.interpreter.screenshot_dir:
             # We took a screenshot, save it to disk
             name = str(command.verb.value) if command.verb.value else "default_screenshot_name.png"
             name = name if "." in name else name + ".png"

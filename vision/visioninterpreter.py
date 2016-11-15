@@ -940,7 +940,7 @@ def interpret_save_test(self, interpreter, ele):
     filename = filename if "." in filename else filename + ".vision"
     abs_path = os.path.abspath(filename)
 
-    if interpreter.tests_dir is not None:
+    if interpreter.tests_dir:
         try:
             os.makedirs(interpreter.tests_dir)
         except OSError as ose:
@@ -2038,10 +2038,10 @@ class VisionInterpreter(object):
         outputters=None,
         browser_options=None,
         base_url="",
-        tests_dir=None,
-        results_dir=None,
-        screenshot_dir=None,
-        upload_dir=None,
+        tests_dir="",
+        results_dir="",
+        screenshot_dir="",
+        upload_dir="",
         webdriver=None):
         self.setup()
         if not webdriver:
