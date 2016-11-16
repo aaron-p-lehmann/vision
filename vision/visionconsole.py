@@ -153,7 +153,7 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
                         "Starting a driver on a remote node.  If we "
                         "can't connect to the address you gave (%s), we'll "
                         "wait indefinitely for one to be available there") % arguments.remote
-                interpreter.webdriver
+                interpreter.webdriver.set_window_size(1024, 768)
                 found_node = True
             except selenium.common.exceptions.WebDriverException as wde:
                 timeout_msg = "Error forwarding the new session"

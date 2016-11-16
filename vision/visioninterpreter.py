@@ -804,12 +804,11 @@ def interpret_contains_dropdown(self, interpreter, ele, expected=True, exact=Fal
 
 def interpret_enter_file(self, interpreter, ele):
     file_str = str(self.value)
-    if interpreter.webdriver.capabilities['browserName'] == 'chrome':
-        interpreter.webdriver.execute_script("arguments[0].visibility = 'visible';", ele) # Chrome won't let you edit file inputs via js, but this seems to circumvent it
+    #if interpreter.webdriver.capabilities['browserName'] == 'chrome':
+    #    interpreter.webdriver.execute_script("arguments[0].visibility = 'visible';", ele) # Chrome won't let you edit file inputs via js, but this seems to circumvent it
     path = self.value.abs_path
-    path = os.path.normpath(path)
+    path = os.path.normpath(os.path.abspath(path))
     keys = ele.send_keys(path)
-    print path
     return True
 
 def interpret_load_test(self, interpreter, ele, running=True):
@@ -1064,11 +1063,13 @@ def interpret_switch_to_window(self, interpreter, ele=None, resize=True):
         for handle in driver.window_handles:
             if current_handle != handle:
                 driver.switch_to_window(handle)
-                if driver.title.startswith(title):
+                if driver.title.startswith(title) or (
+                    driver.current_url.endswith(title) and title.startswith("?")):
                     return handle
         else:
             driver.switch_to_window(current_handle)
-            if driver.title.startswith(title):
+            if driver.title.startswith(title) or (
+                driver.current_url.endswith(title) and title.startswith("?")):
                 return current_handle
 
     noun = getattr(ele, 'noun', None) if ele else None
