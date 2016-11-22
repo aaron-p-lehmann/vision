@@ -2400,7 +2400,7 @@ class VisionInterpreter(object):
                 first = False
                 self.handle_commands()
         except KeyboardInterrupt as ke:
-# We don't need a traceback for Ctrl-C
+            # We don't need a traceback for Ctrl-C
             pass
         except (Exception, KeyboardInterrupt) as e:
             import traceback
