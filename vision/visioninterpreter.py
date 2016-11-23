@@ -887,6 +887,36 @@ def interpret_next_command(self, interpreter, ele):
             pass
     return True
 
+def interpret_where(self, interpreter, ele):
+    scopes = []
+    current_level = 0
+    for command in (com for com in interpreter.parser.children if not com.error and com.executed):
+        if command.scopechange > 0:
+            scopes.append(command)
+        elif command.scopechange < 0:
+            scopes = scopes[:command.scopechange]
+        current_level += command.scopechange
+    if scopes:
+        line_format = "{filename:<%(filename_width)d}:{line_number:>%(line_number_width)d}| {indent}{code}" % {
+            'filename_width': (max(len(command.scanner.name) for command in self.parser.children)),
+            'line_number_width': (int(math.log10(max([com.lineno for com in scopes]))) + 1)}
+        for command in scopes:
+             print line_format.format(
+                filename=command.scanner.name,
+                line_number=command.lineno,
+                indent= "".join(["    "] * command.scope_level),
+                code=command.code)
+    else:
+        print "This is the topmost scope"
+    return True
+
+def interpret_show_context(self, interpreter, ele):
+    if self.command.context:
+        print self.command.context.code[0].capitalize() + self.command.context.code[1:]
+    else:
+        print "This is the global context"
+    return True
+
 def interpret_step_into_python(self, interpreter, ele):
     scanner = interpreter.parser.file_scanner
     if self.value:
@@ -993,9 +1023,9 @@ def interpret_show_test(self, interpreter, ele, getall):
 def interpret_show_input(self, interpreter, ele, getall):
     lines = []
     scope_level = 0
-    line_format = "{interpreter_code}{removal_code}{error_code}|{filename:<%(filename_width)d}:{line_number:>%(line_number_width)d}|{indent}" % {
+    line_format = "{interpreter_code}{removal_code}{error_code}|{filename:<%(filename_width)d}:{line_number:>%(line_number_width)d}| {indent}" % {
         'filename_width': (max(len(command.scanner.name) for command in self.parser.children)),
-        'line_number_width': (int(math.log10(len(self.parser.children))) + 1)}
+        'line_number_width': (int(math.log10(max(com.lineno for com in self.parser.children))) + 1)}
     for (i, command) in enumerate(self.parser.children,1):
         before = line_format.format(
             interpreter_code="I" if isinstance(command.verb, visionparser.InterpreterVerb) else " ",
@@ -1892,6 +1922,8 @@ class VisionInterpreter(object):
                 'load test': collections.defaultdict( lambda: functools.partial(interpret_load_test, running=False)),
                 'run test': collections.defaultdict( lambda: interpret_load_test ),
                 'next command': collections.defaultdict( lambda: interpret_next_command ),
+                'where': collections.defaultdict( lambda: interpret_where ),
+                'show context': collections.defaultdict( lambda: interpret_show_context ),
                 'break': collections.defaultdict( lambda: interpret_break ),
                 'step into python': collections.defaultdict( lambda: interpret_step_into_python ),
                 'interactive': collections.defaultdict( lambda: interpret_interactive ),

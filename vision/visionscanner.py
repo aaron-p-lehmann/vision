@@ -525,6 +525,8 @@ class InteractiveTokenizer(BasicTokenizer):
         'load_test': [visionparser.InterpreterVerb, {}],
         'run_test': [visionparser.InterpreterVerb, {}],
         'save_test': [visionparser.InterpreterVerb, {'must_have': (visionparser.Literal,)}],
+        'show_context': [visionparser.InterpreterVerb, {}],
+        'where': [visionparser.InterpreterVerb, {}],
         'show_test': [visionparser.InterpreterVerb, {}],
         'show_input': [visionparser.InterpreterVerb, {}],
         'show_all_input': [visionparser.InterpreterVerb, {}],
@@ -578,30 +580,17 @@ class InteractiveVisionScanner(VisionScanner):
         except StopIteration, si:
             if not self.subcommand:
                 try:
-                    scopes = ['global']
-                    try:
-                        command = next(com for com in reversed(self.parser.children) if com.parsed and not com.error)
-                        scopes.extend(str(com.verb.value) for com in command.scopes)
-                        if command.scopechange > 0:
-                            # The most recent command opened a scope,
-                            # include it in the list
-                            scopes.append(str(command.verb.value))
-                        elif command.scopechange < 0:
-                            # The most recent command closed a scope,
-                            # cut the end of the scope list
-                            scopes = scopes[:command.scopechange]
-                    except StopIteration as si:
-                        pass
+                    scope = str(self.scopes[-1].verb.value) if self.scopes else 'global'
                     if self.parser.file_scanner:
                         inp = raw_input( "<%s>:%s|%s:  " % (
                             self.parser.file_scanner.name,
                             self.parser.file_scanner.position + 1 if self.parser.file_scanner.position + 1 < len(self.parser.file_scanner.lines) else "EOF",
-                            scopes[-1]))
+                            scope))
                     else:
                         inp = raw_input( "<%s>:%s|%s:  " % (
                             "NO FILE",
-                            self.position,
-                            scopes[-1]))
+                            self.position + 1,
+                            scope))
                 except Exception, e:
                     inp = 'quit'
                 self.addline(StringIO.StringIO(inp))
@@ -613,3 +602,20 @@ class InteractiveVisionScanner(VisionScanner):
             readline.write_history_file(os.path.expanduser("~/.vision_history"))
         return tokens
 
+    @property
+    def scopes(self):
+        scopes = []
+        try:
+            command = next(com for com in reversed(self.parser.children) if com.parsed and not com.error)
+            scopes.extend(command.scopes)
+            if command.scopechange > 0:
+                # The most recent command opened a scope,
+                # include it in the list
+                scopes.append(command)
+            elif command.scopechange < 0:
+                # The most recent command closed a scope,
+                # cut the end of the scope list
+                scopes = scopes[:command.scopechange]
+        except StopIteration as si:
+            pass
+        return scopes
