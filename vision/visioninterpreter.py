@@ -1283,9 +1283,9 @@ def interpret_help(self, interpreter, ele):
         print header_format.format(
             **(dict((n, n) for n in groups_keywords.keys())))
         rows = zip(
-            groups_keywords['Nouns'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Nouns'][1]))),
-            groups_keywords['Verbs'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Verbs'][1]))),
-            groups_keywords['Interpreter Verbs'][1].keys() + ([''] * (longest_column_length - len(groups_keywords['Interpreter Verbs'][1]))),)
+            list(sorted(groups_keywords['Nouns'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Nouns'][1]))),
+            list(sorted(groups_keywords['Verbs'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Verbs'][1]))),
+            list(sorted(groups_keywords['Interpreter Verbs'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Interpreter Verbs'][1]))),)
         for row_data in rows:
             print column_format.format(
                 **(dict(zip(groups_keywords.keys(), [' '.join(kw.capitalize().split('_')) for kw in row_data]))))
