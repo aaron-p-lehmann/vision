@@ -592,9 +592,16 @@ class InteractiveVisionScanner(VisionScanner):
                             scopes = scopes[:command.scopechange]
                     except StopIteration as si:
                         pass
-                    inp = raw_input( "%s:%d:  " % (
-                        scopes[-1],
-                        self.parser.number_of_lines + 1))
+                    if self.parser.file_scanner:
+                        inp = raw_input( "<%s>:%s|%s:  " % (
+                            self.parser.file_scanner.name,
+                            self.parser.file_scanner.position + 1 if self.parser.file_scanner.position + 1 < len(self.parser.file_scanner.lines) else "EOF",
+                            scopes[-1]))
+                    else:
+                        inp = raw_input( "<%s>:%s|%s:  " % (
+                            "NO FILE",
+                            self.position,
+                            scopes[-1]))
                 except Exception, e:
                     inp = 'quit'
                 self.addline(StringIO.StringIO(inp))
