@@ -2212,7 +2212,7 @@ class VisionInterpreter(object):
             self.parser.scanner = self.parser.file_scanner
             self.step = False
             import pdb;pdb.set_trace()
-        elif not self.next_command and self.interactivity_enabled:
+        elif not self.next_command and self.interactivity_enabled and self.parser.scanner is not self.parser.subcommand_scanner:
             # We need to go into interactive mode
             self.parser.scanner = self.parser.interactive_scanner
 
