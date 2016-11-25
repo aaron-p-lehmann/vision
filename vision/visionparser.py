@@ -1228,6 +1228,19 @@ class Wait(CommandModifier):
     # A Wait cannot have more than one Literal
     cant_have={Literal:2,}
 
+class Verbose(CommandModifier):
+    """
+    Tells the interpreter to be verbose in it's activities for this
+    command.
+    """
+
+    # A Comment expects a Literal
+    expected=()
+    children=()
+
+    # A Comment cannot have more than one Literal
+    cant_have={}
+
 class Skip(InputPhrase):
     """
     Represents the reason the command will be skipped.  Skipped comands
@@ -1548,6 +1561,11 @@ class Command(InputPhrase):
             return float(str(next(wait_iter).value))
         except StopIteration, si:
             return self.parser.scanner.maximum_time
+
+    @property
+    def verbose(self):
+        return self.parser.interpreter.verbose or bool([
+            token for token in self.children if isinstance(token, Verbose)])
 
     @property
     def skip(self):

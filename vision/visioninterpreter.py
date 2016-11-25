@@ -123,8 +123,6 @@ def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predi
                 ]
         if not xpaths:
             xpaths += ["./%s::%s%s" % (self.axis, tag, additional_predicate)]
-    if self.parser.interpreter.verbose:
-        print xpaths
     return (tuple(xpaths), tuple(nots))
 
 def compile_simple_to_xpath(self, tag, nots=(), base_axis="descendant"):
@@ -285,8 +283,6 @@ def compile_box_to_xpath(self, nots=(), base_axis=None):
             base_axis or "descendant",
             val_comp)
     xpath = "./%s::fieldset%s" % (self.axis, predicate)
-    if self.parser.interpreter.verbose:
-        print xpath
     return (xpath,), nots
 
 def compile_table_to_xpath(self, nots=(), base_axis=None):
@@ -295,8 +291,6 @@ def compile_table_to_xpath(self, nots=(), base_axis=None):
         val_comp = self.value.compile()
         predicate = "[ contains(normalize-space(ancestor::fieldset/legend), %s) ]" % val_comp
     xpath = "./%s::table%s" % (self.axis, predicate)
-    if self.parser.interpreter.verbose:
-        print xpath
     return (xpath,), nots
 
 def interpret_selenium_command(self, interpreter, ele=None):
@@ -329,6 +323,12 @@ def interpret_selenium_command(self, interpreter, ele=None):
         if not ele:
             return False
 
+    if self.verbose and self.subject:
+        xpath = "/".join(
+            [noun.element.locator for noun in
+            self.subject.get_context_nouns() if getattr(noun.element, "locator", None)])
+        print "Found the element for %s using the xpath %s" % (self.subject.code, xpath)
+
     # Find the module our webdriver instance is from.  Do it this way
     # because by this point we really don't know what kind of webdriver
     # we have (local or remote, if local, what browser)
@@ -338,6 +338,8 @@ def interpret_selenium_command(self, interpreter, ele=None):
     # files.  Selenium folks made the bizaar design descision to defalut
     # the other way
     start = time.time()
+    if self.verbose:
+        print "Starting to %s" % self.verb.code
     try:
         file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
     except AttributeError as ae:
@@ -349,6 +351,8 @@ def interpret_selenium_command(self, interpreter, ele=None):
         with interpreter.webdriver.file_detector_context(file_detector):
             ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     finally:
+        if self.verbose:
+            print "Finished %s" % self.verb.code
         total = time.time() - start
         verb_timing = self.timing.get(self.verb, {
             'total': 0
@@ -436,7 +440,11 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             xpath_start = time.time()
             new_possibles = []
             try:
+                if noun.command.verbose:
+                    print "Searching for possible elements with:\n\t%s" % xpath
                 new_possibles = func(xpath)
+                if noun.command.verbose:
+                    print "Found %d possible elements" % len(new_possibles)
             finally:
                 xpath_end = time.time()
                 locator_info[xpath] = {
@@ -462,8 +470,12 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             filter_dict[xpath] = True
             xpath_start = time.time()
             try:
+                if noun.command.verbose:
+                    print "Search elements to filter with\n\t%s" % xpath
                 new_filters = func(xpath)
                 new_filters = [el for el in new_filters if el in set(new_filters) - set(filter_elements)]
+                if noun.command.verbose:
+                    print "Found filter elements %d" % len(new_filters)
                 filter_elements += new_filters
                 for filter_element in new_filters:
                     found_elements[filter_element] = xpath
@@ -513,6 +525,8 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                     # it
                     el.locator = locator
                     break
+            if noun.command.verbose:
+                print "Found '%s' using '%s'" % (noun.code, el.locator)
 
         if not getattr(noun, 'id', None):
             noun.id = None
@@ -564,7 +578,11 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
         el = locator()
         if el:
             try:
+                if self.command.verbose:
+                    print "Hovering over the element '%s'" % self.code
                 selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(el, -1, -1).move_to_element(el).perform()
+                if self.command.verbose:
+                    print "Hovered over the element '%s'" % self.code
             except:
                 pass
         else:
@@ -1995,6 +2013,9 @@ class VisionInterpreter(object):
 
             # within
             'within': [visionparser.Wait, {'must_have': [visionparser.Literal]}],
+
+            # verbosely
+            'verbosely': [visionparser.Verbose, {}],
 
             # skip
             'is_skipped': [visionparser.Skip, {}],
