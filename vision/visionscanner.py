@@ -529,6 +529,7 @@ class InteractiveTokenizer(BasicTokenizer):
         'where': [visionparser.InterpreterVerb, {}],
         'show_test': [visionparser.InterpreterVerb, {}],
         'show_input': [visionparser.InterpreterVerb, {}],
+        'pop': [visionparser.InterpreterVerb, {'cant_have': {visionparser.Literal: 2}}],
         'show_all_input': [visionparser.InterpreterVerb, {}],
         'skip': [visionparser.InterpreterVerb, {}],
         'next_command': [visionparser.InterpreterVerb, {'cant_have': (visionparser.Literal,)}],
@@ -584,7 +585,7 @@ class InteractiveVisionScanner(VisionScanner):
                     if self.parser.file_scanner:
                         inp = raw_input( "<%s>:%s|%s:  " % (
                             self.parser.file_scanner.name,
-                            self.parser.file_scanner.position + 1 if self.parser.file_scanner.position + 1 < len(self.parser.file_scanner.lines) else "EOF",
+                            self.parser.file_scanner.position + 1 if self.parser.file_scanner.position + 1 <= len(self.parser.file_scanner.lines) else "EOF",
                             scope))
                     else:
                         inp = raw_input( "<%s>:%s|%s:  " % (

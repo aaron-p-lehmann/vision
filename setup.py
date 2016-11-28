@@ -8,7 +8,7 @@ reqs = {
 
 setup(
     name='vision',
-    version='0.10.521',
+    version='0.10.535',
     packages=find_packages(),
 
     # This requires selenium

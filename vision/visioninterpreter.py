@@ -1047,7 +1047,7 @@ def interpret_show_input(self, interpreter, ele, getall):
     for (i, command) in enumerate(self.parser.children,1):
         before = line_format.format(
             interpreter_code="I" if isinstance(command.verb, visionparser.InterpreterVerb) else " ",
-            removal_code="-" if command.removed else " ",
+            removal_code="R" if command.removed else " ",
             error_code="E" if command.error else "S" if command.skip or [scope for scope in command.scopes if scope.skip] else " ",
             filename=command.scanner.name,
             line_number=i,
@@ -1070,6 +1070,32 @@ def interpret_show_input(self, interpreter, ele, getall):
                             success=not command.error)
         scope_level += command.scopechange
 
+    return True
+
+def interpret_pop(self, interpreter, ele):
+    pop_lines = int(str(self.value)) if self.value else 1
+    for command in self.command.previous_commands_iter:
+        if not (command.usable or command.scanner is self.parser.subcommand_scanner):
+            # Commands that are neither usable nor subcommands need
+            # not apply
+            continue
+        elif pop_lines:
+            if command.scanner is not self.parser.subcommand_scanner:
+                # Commands that are usable and not subcommands cause the
+                # counter to be decremented
+                pop_lines -= 1
+            command.removed = True
+            if hasattr(command.scanner, 'rewind'):
+                # Rewind the scanner, if possible
+                command.scanner.rewind(1)
+
+                # Make sure the scanner is in the list of scanners
+                self.parser.scanner = command.scanner
+
+                # Make sure the current scanner is the interactive scanner
+                self.parser.scanner = self.parser.interactive_scanner
+        else:
+            break
     return True
 
 def interpret_skip(self, interpreter, ele):
@@ -1949,6 +1975,7 @@ class VisionInterpreter(object):
                 'finish': collections.defaultdict( lambda: interpret_finish ),
                 'show test': collections.defaultdict( lambda: functools.partial(interpret_show_test, getall=False) ),
                 'show input': collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=False) ),
+                'pop': collections.defaultdict( lambda: functools.partial(interpret_pop) ),
                 'show all input': collections.defaultdict( lambda: functools.partial(interpret_show_input, getall=True) ),
                 'skip': collections.defaultdict( lambda: functools.partial(interpret_skip) ),
                 'quit': collections.defaultdict( lambda: interpret_quit ),

@@ -1272,6 +1272,7 @@ class Command(InputPhrase):
     yieldable = True
 
     def __init__(self, scanner, lineno, token_type=None, scanner_args=None):
+        self.removed = False
         self.scopechange = 0
         self.lineno = lineno
         self.origin_scanner = self.scanner = scanner
@@ -1507,7 +1508,7 @@ class Command(InputPhrase):
 
     @property
     def usable(self):
-        return self.verb and self.verb.usable
+        return self.verb and self.verb.usable and not self.removed
 
     @property
     def scope_level(self):
@@ -1604,7 +1605,6 @@ class InterpreterCommand(Command):
 
     def __init__(self, scanner, lineno):
         super(InterpreterCommand, self).__init__(scanner, lineno)
-        self.removed = False
         self.error = False
         self.vision_saved = []
         self.scopechange = 0
