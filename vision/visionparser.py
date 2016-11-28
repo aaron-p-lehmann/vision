@@ -1260,10 +1260,11 @@ class Command(InputPhrase):
 
     # A command can have Objects, Subjects, and Verbs, in any order
     # It can only have one of each kind of clause
-    expected=(Context, Noun, Verb, Variable, Noop, Comment, Wait, Skip, SubjectPartStart)
-    children=(Context, Noun, Verb, Variable, Comment, Wait, Skip)
+    expected=(Context, Noun, Verb, Variable, Noop, Comment, Wait, Skip, Verbose, SubjectPartStart)
+    children=(Context, Noun, Verb, Variable, Comment, Wait, Skip, Verbose)
     must_have={Verb: 1}
     cant_have={
+        Verbose: 2,
         Wait: 2,
         Skip: 2,
         Verb: 2,
