@@ -897,7 +897,7 @@ class AttributeNoun(Noun):
     def compile(self, *args, **kwargs):
         xpath = self.means
         if self.method != 'xpath':
-            xpath = "//node()[@%s='%s']" % (self.method, self.means)
+            xpath = "./descendant::node()[@%s='%s']" % (self.method, self.means)
         return (xpath,), ()
 
 class Context(ValueObject):
