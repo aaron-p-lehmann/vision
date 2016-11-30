@@ -319,6 +319,8 @@ def interpret_selenium_command(self, interpreter, ele=None):
         if noun:
             noun_time = time.time()
             try:
+                if self.verbose:
+                    print "VERBOSE: SUBJECT: START: Looking for the element %s" % noun.code
                 ele = interpreter.locate(
                     function=functools.partial(
                         noun.interpret,
@@ -327,6 +329,14 @@ def interpret_selenium_command(self, interpreter, ele=None):
                     maximum_wait=wait_time)
             finally:
                 total = time.time() - noun_time
+                if self.verbose:
+                    if ele:
+                        xpath = "/".join(
+                            [noun.element.locator for noun in
+                            self.subject.get_context_nouns() if getattr(noun.element, "locator", None)])
+                        print "VERBOSE: SUBJECT: SUCCESS: Found the element for %s using the xpath %s in %f seconds" % (noun.code, xpath, total)
+                    else:
+                        print "VERBOSE: SUBJECT: FAILURE: Unable to find the element for %s in %f seconds" % (noun.code, total)
                 noun_timing = self.timing.get(
                     noun, {
                         'total': 0,
@@ -340,11 +350,6 @@ def interpret_selenium_command(self, interpreter, ele=None):
         if not ele:
             return False
 
-    if self.verbose and self.subject:
-        xpath = "/".join(
-            [noun.element.locator for noun in
-            self.subject.get_context_nouns() if getattr(noun.element, "locator", None)])
-        print "Found the element for %s using the xpath %s" % (self.subject.code, xpath)
 
     # Find the module our webdriver instance is from.  Do it this way
     # because by this point we really don't know what kind of webdriver
@@ -356,7 +361,7 @@ def interpret_selenium_command(self, interpreter, ele=None):
     # the other way
     start = time.time()
     if self.verbose:
-        print "Starting to %s" % self.verb.code
+        print "VERBOSE: VERB: START: Starting to %s" % self.verb.code
     try:
         file_detector = webdriver_module.file_detector.LocalFileDetector if (subj and subj.type == 'file input') else webdriver_module.file_detector.UselessFileDetector
     except AttributeError as ae:
@@ -364,13 +369,16 @@ def interpret_selenium_command(self, interpreter, ele=None):
         # so we don't need to set up the context
         ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     else:
-        # We do filedection, set up the context
+        # We do file detection, set up the context
         with interpreter.webdriver.file_detector_context(file_detector):
             ret = self.verb.interpret(interpreter=interpreter, ele=ele)
     finally:
-        if self.verbose:
-            print "Finished %s" % self.verb.code
         total = time.time() - start
+        if self.verbose:
+            if ret:
+                print "VERBOSE: VERB: SUCCESS: Finished %s in %f seconds" % (self.verb.code, total)
+            else:
+                print "VERBOSE: VERB: FAILURE: Unable to %s in %f seconds" % (self.verb.code, total)
         verb_timing = self.timing.get(self.verb, {
             'total': 0
         })
@@ -449,6 +457,8 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
         locator_info = {}
         found_elements = {}
 
+        locating_start = time.time()
+
         # Get all possible matches
         for xpath in finds:
             if xpath in locator_info:
@@ -458,12 +468,15 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             new_possibles = []
             try:
                 if noun.command.verbose:
-                    print "Searching for possible elements with:\n\t%s" % xpath
+                    print "VERBOSE: XPATH: START: Searching for possible elements with: %s" % xpath
                 new_possibles = func(xpath)
-                if noun.command.verbose:
-                    print "Found %d possible elements" % len(new_possibles)
             finally:
                 xpath_end = time.time()
+                if noun.command.verbose:
+                    if new_possibles:
+                        print "VERBOSE: XPATH: SUCCESS: Found %d possible elements with %s in %f seconds" % (len(new_possibles), xpath, xpath_end - xpath_start)
+                    else:
+                        print "VERBOSE: XPATH: FAILURE: Unable to find possible elements with %s in %f seconds" % (xpath, xpath_end - xpath_start)
                 locator_info[xpath] = {
                     'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
                     'elements': new_possibles,
@@ -488,16 +501,19 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             xpath_start = time.time()
             try:
                 if noun.command.verbose:
-                    print "Search elements to filter with\n\t%s" % xpath
+                    print "VERBOSE: XPATH: START: Search elements to filter out with: %s" % xpath
                 new_filters = func(xpath)
                 new_filters = [el for el in new_filters if el in set(new_filters) - set(filter_elements)]
-                if noun.command.verbose:
-                    print "Found filter elements %d" % len(new_filters)
                 filter_elements += new_filters
                 for filter_element in new_filters:
                     found_elements[filter_element] = xpath
             finally:
                 xpath_end = time.time()
+                if noun.command.verbose:
+                    if new_filters:
+                        print "VERBOSE: XPATH: SUCCESS: Found %d filter elements with %s in %f seconds" % (len(new_filters), xpath, xpath_end - xpath_start)
+                    else:
+                        print "VERBOSE: XPATH: FAIL: Unable to find filter elements with %s in %f seconds" % (xpath, xpath_end - xpath_start)
                 locator_info[xpath] = locator_info.get(xpath, {
                     'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
                     'elements': new_filters,
@@ -542,8 +558,12 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                     # it
                     el.locator = locator
                     break
+            locating_end = time.time()
             if noun.command.verbose:
-                print "Found '%s' using '%s'" % (noun.code, el.locator)
+                if el.locator:
+                    print "VERBOSE: NOUN: SUCCESS: Found '%s' using '%s' in %f seconds" % (noun.code, el.locator, locating_end - locating_start)
+                else:
+                    print "VERBOSE: NOUN: FAILURE: Unable to find '%s' using '%s' in %f seconds" % (noun.code, el.locator, locating_end - locating_start)
 
         if not getattr(noun, 'id', None):
             noun.id = None
@@ -595,11 +615,13 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
         el = locator()
         if el:
             try:
+                hovering_start = time.time()
                 if self.command.verbose:
-                    print "Hovering over the element '%s'" % self.code
+                    print "VERBOSE: HOVER: START: Hovering over the element '%s'" % self.code
                 selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(el, -1, -1).move_to_element(el).perform()
+                hovering_end = time.time()
                 if self.command.verbose:
-                    print "Hovered over the element '%s'" % self.code
+                    print "VERBOSE: HOVER: FINISH: Hovered over the element '%s' in %f seconds" % (self.code, hovering_end - hovering_start)
             except:
                 pass
         else:
@@ -2284,6 +2306,8 @@ class VisionInterpreter(object):
                 # If this is a command that cares whether we are ready,
                 # then verify that
                 check_start = time.time()
+                if command.verbose:
+                    print "VERBOSE: READY STATE: START: Beginning to check whether the page is ready"
                 try:
                     ready = self.check_page_ready(command)
                     if ready:
@@ -2292,8 +2316,27 @@ class VisionInterpreter(object):
                         # Tell the wait loop to wait and try again
                         return False
                 finally:
-                    command.timing['check_readyState'] = command.timing.get('check_readyState', 0) + time.time() - check_start
-            return command.interpret(interpreter=self, ele=ele)
+                    check_finish = time.time()
+                    if command.verbose:
+                        if ready:
+                            print "VERBOSE: READY STATE: SUCCESS: Found the page to be ready after %f seconds" % (check_finish - check_start)
+                        else:
+                            print "VERBOSE: READY STATE: FAILURE: Found the page to be unready after %f seconds" % (check_finish - check_start)
+                    command.timing['check_readyState'] = command.timing.get('check_readyState', 0) + (check_finish - check_start)
+            command_start = time.time()
+            ret = False
+            try:
+                if command.verbose:
+                    print "VERBOSE: COMMAND: START: Starting to interpret %s" % command.code
+                ret = command.interpret(interpreter=self, ele=ele)
+                return ret
+            finally:
+                command_finish = time.time()
+                if command.verbose:
+                    if ret:
+                        print "VERBOSE: COMMAND: SUCCESS: Interpreted command %s in %f seconds" % (command.code, command_finish - command_start)
+                    else:
+                        print "VERBOSE: COMMAND: FAILURE: Failed to interpret command %s in %f seconds" % (command.code, command_finish - command_start)
         except UnexpectedAlertPresentException as uape:
             raise
         except WebDriverException as wde:
@@ -2333,6 +2376,8 @@ class VisionInterpreter(object):
             errored_or_skipping = command.error or (self.errorfound and not self.interactivity_enabled) or (command.skip or skipscope)
             is_to_the_interpreter = self.interactivity_enabled and not (command.error or command.skip) and isinstance(command.verb, visionparser.InterpreterVerb)
             if not errored_or_skipping or is_to_the_interpreter:
+                if command.verbose:
+                    print "VERBOSE: COMMAND TOTAL: START: Starting %s" % command.code
                 try:
                     # We parsed successfully and we are still executing commands
                     if is_to_the_interpreter or not command.verb.timed:
@@ -2368,6 +2413,13 @@ class VisionInterpreter(object):
                         self.parser.scanner = self.parser.interactive_scanner
 
                 command_total = finish - start
+                if command.verbose:
+                    if not command.executed:
+                        print "VERBOSE: COMMAND TOTAL: FAILURE: Command %s was not executed" % command.code
+                    elif not command.error:
+                        print "VERBOSE: COMMAND TOTAL: SUCCESS: Command %s succeeded in %f seconds" % (command.code, command_total)
+                    else:
+                        print "VERBOSE: COMMAND TOTAL: FAILURE: Command %s failed in %f seconds" % (command.code, command_total)
                 command.timing[command] = {
                     'format': time_format,
                     'total': command_total
