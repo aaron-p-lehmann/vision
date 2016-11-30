@@ -332,11 +332,10 @@ def interpret_selenium_command(self, interpreter, ele=None):
                 if self.verbose:
                     if ele:
                         xpath = "/".join(
-                            [noun.element.locator for noun in
-                            self.subject.get_context_nouns() if getattr(noun.element, "locator", None)])
-                        print "VERBOSE: SUBJECT: SUCCESS: Found the element for %s using the xpath %s in %f seconds" % (noun.code, xpath, total)
+                            reversed([noun.element.locator for noun in self.subject.get_context_nouns() if getattr(noun.element, "locator", None)]))
+                        print "VERBOSE: SUBJECT: SUCCESS: (%f seconds) Found the element for %s using the xpath %s" % (total, self.subject.code, xpath)
                     else:
-                        print "VERBOSE: SUBJECT: FAILURE: Unable to find the element for %s in %f seconds" % (noun.code, total)
+                        print "VERBOSE: SUBJECT: FAILURE: (%f seconds) Unable to find the element for %s" % (total, self.subject.code)
                 noun_timing = self.timing.get(
                     noun, {
                         'total': 0,
@@ -376,9 +375,9 @@ def interpret_selenium_command(self, interpreter, ele=None):
         total = time.time() - start
         if self.verbose:
             if ret:
-                print "VERBOSE: VERB: SUCCESS: Finished %s in %f seconds" % (self.verb.code, total)
+                print "VERBOSE: VERB: SUCCESS: (%f seconds) Finished %s" % (total, self.verb.code)
             else:
-                print "VERBOSE: VERB: FAILURE: Unable to %s in %f seconds" % (self.verb.code, total)
+                print "VERBOSE: VERB: FAILURE: (%f seconds) Unable to %s" % (total, self.verb.code)
         verb_timing = self.timing.get(self.verb, {
             'total': 0
         })
@@ -474,9 +473,9 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                 xpath_end = time.time()
                 if noun.command.verbose:
                     if new_possibles:
-                        print "VERBOSE: XPATH: SUCCESS: Found %d possible elements with %s in %f seconds" % (len(new_possibles), xpath, xpath_end - xpath_start)
+                        print "VERBOSE: XPATH: SUCCESS: (%f seconds) Found %d possible elements with %s" % (xpath_end - xpath_start, len(new_possibles), xpath)
                     else:
-                        print "VERBOSE: XPATH: FAILURE: Unable to find possible elements with %s in %f seconds" % (xpath, xpath_end - xpath_start)
+                        print "VERBOSE: XPATH: FAILURE: (%f seconds) Unable to find possible elements with %s" % (xpath_end - xpath_start, xpath)
                 locator_info[xpath] = {
                     'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
                     'elements': new_possibles,
@@ -511,9 +510,9 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                 xpath_end = time.time()
                 if noun.command.verbose:
                     if new_filters:
-                        print "VERBOSE: XPATH: SUCCESS: Found %d filter elements with %s in %f seconds" % (len(new_filters), xpath, xpath_end - xpath_start)
+                        print "VERBOSE: XPATH: SUCCESS: (%f seconds) Found %d filter elements with %s" % (xpath_end - xpath_start, len(new_filters), xpath)
                     else:
-                        print "VERBOSE: XPATH: FAIL: Unable to find filter elements with %s in %f seconds" % (xpath, xpath_end - xpath_start)
+                        print "VERBOSE: XPATH: FAIL: (%f seconds) Unable to find filter elements with %s" % (xpath_end - xpath_start, xpath)
                 locator_info[xpath] = locator_info.get(xpath, {
                     'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
                     'elements': new_filters,
@@ -561,9 +560,9 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             locating_end = time.time()
             if noun.command.verbose:
                 if el.locator:
-                    print "VERBOSE: NOUN: SUCCESS: Found '%s' using '%s' in %f seconds" % (noun.code, el.locator, locating_end - locating_start)
+                    print "VERBOSE: NOUN: SUCCESS: (%f seconds) Found '%s' using '%s'" % (locating_end - locating_start, noun.code, el.locator)
                 else:
-                    print "VERBOSE: NOUN: FAILURE: Unable to find '%s' using '%s' in %f seconds" % (noun.code, el.locator, locating_end - locating_start)
+                    print "VERBOSE: NOUN: FAILURE: (%f seconds) Unable to find '%s' using '%s'" % (locating_end - locating_start, noun.code, el.locator)
 
         if not getattr(noun, 'id', None):
             noun.id = None
@@ -621,8 +620,10 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
                 selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(el, -1, -1).move_to_element(el).perform()
                 hovering_end = time.time()
                 if self.command.verbose:
-                    print "VERBOSE: HOVER: FINISH: Hovered over the element '%s' in %f seconds" % (self.code, hovering_end - hovering_start)
+                    print "VERBOSE: HOVER: SUCCESS: (%f seconds) Hovered over the element '%s'" % (hovering_end - hovering_start, self.code)
             except:
+                if self.command.verbose:
+                    print "VERBOSE: HOVER: FAILURE: (%f seconds) Failed to hover over the element '%s'" % (hovering_end - hovering_start, self.code)
                 pass
         else:
             raise visionexceptions.UnfoundElementError(self)
@@ -2319,9 +2320,9 @@ class VisionInterpreter(object):
                     check_finish = time.time()
                     if command.verbose:
                         if ready:
-                            print "VERBOSE: READY STATE: SUCCESS: Found the page to be ready after %f seconds" % (check_finish - check_start)
+                            print "VERBOSE: READY STATE: SUCCESS: (%f seconds) Found the page to be ready" % (check_finish - check_start)
                         else:
-                            print "VERBOSE: READY STATE: FAILURE: Found the page to be unready after %f seconds" % (check_finish - check_start)
+                            print "VERBOSE: READY STATE: FAILURE: (%f seconds) Found the page to be unready" % (check_finish - check_start)
                     command.timing['check_readyState'] = command.timing.get('check_readyState', 0) + (check_finish - check_start)
             command_start = time.time()
             ret = False
@@ -2334,9 +2335,9 @@ class VisionInterpreter(object):
                 command_finish = time.time()
                 if command.verbose:
                     if ret:
-                        print "VERBOSE: COMMAND: SUCCESS: Interpreted command %s in %f seconds" % (command.code, command_finish - command_start)
+                        print "VERBOSE: COMMAND: SUCCESS: (%f seconds) Interpreted command '%s'" % (command_finish - command_start, command.code)
                     else:
-                        print "VERBOSE: COMMAND: FAILURE: Failed to interpret command %s in %f seconds" % (command.code, command_finish - command_start)
+                        print "VERBOSE: COMMAND: FAILURE: (%f seconds) Failed to interpret command '%s'" % (command_finish - command_start, command.code)
         except UnexpectedAlertPresentException as uape:
             raise
         except WebDriverException as wde:
@@ -2417,9 +2418,9 @@ class VisionInterpreter(object):
                     if not command.executed:
                         print "VERBOSE: COMMAND TOTAL: FAILURE: Command %s was not executed" % command.code
                     elif not command.error:
-                        print "VERBOSE: COMMAND TOTAL: SUCCESS: Command %s succeeded in %f seconds" % (command.code, command_total)
+                        print "VERBOSE: COMMAND TOTAL: SUCCESS: (%f seconds) Command '%s' succeeded" % (command_total, command.code)
                     else:
-                        print "VERBOSE: COMMAND TOTAL: FAILURE: Command %s failed in %f seconds" % (command.code, command_total)
+                        print "VERBOSE: COMMAND TOTAL: FAILURE: (%f seconds) Command %s failed" % (command_total, command.code)
                 command.timing[command] = {
                     'format': time_format,
                     'total': command_total
