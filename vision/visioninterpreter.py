@@ -43,6 +43,12 @@ def output_file_literal(token, output):
                 print "Failed to write %s: %s" % (literal.abs_path, e)
     return True
 
+def output_capture(token, output):
+    fname = str(token.value)
+    fname = fname if fname.lower().endswith(".png") else (fname + ".png")
+    token.command.capture.save(os.path.join(os.getcwd(), fname))
+    return True
+
 def case_insensitive(leftside):
     return "translate(%s, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')" % leftside
 
@@ -1785,6 +1791,7 @@ class BasicVisionOutput(visionoutput.VisionOutput):
     def setup_outputs(self, outputs):
         super(BasicVisionOutput, self).setup_outputs(outputs)
         outputs['file_literal'] = output_file_literal
+        outputs['capture'] = output_capture
 
 def browser_unsupported(browser_options):
     raise visionexceptions.VisionException(
