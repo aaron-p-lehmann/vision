@@ -1326,7 +1326,11 @@ def interpret_help(self, interpreter, ele):
         ('Verbs', [
             lambda keyword, keyword_type: keyword_type == visionparser.Verb, collections.OrderedDict(), 1, 0]),
         ('Interpreter Verbs', [
-            lambda keyword, keyword_type: keyword_type == visionparser.InterpreterVerb, collections.OrderedDict(), 1, 0]),])
+            lambda keyword, keyword_type: keyword_type == visionparser.InterpreterVerb, collections.OrderedDict(), 2, 0]),
+        ('Command Modifiers', [
+            lambda keyword, keyword_type: issubclass(keyword_type, visionparser.CommandModifier), collections.OrderedDict(), 3, 0]),
+        ('Miscellaneous Keywords', [
+            lambda keyword, keyword_type: True, collections.OrderedDict(), 4, 0])])
 
     # Doug wants a seperate group for Assertions, but that'll take some
     # refactoring of things, so punt for now
@@ -1335,19 +1339,19 @@ def interpret_help(self, interpreter, ele):
     keywords_groups = {}
 
     # populate the columns, and figure out widths
-    longest_col = [0] * 3
-    tokens = interpreter.parser.interactive_scanner.tokenizer.get_token_mapper().items()
-    for (keyword, data) in tokens:
+    mapper = interpreter.parser.interactive_scanner.tokenizer.get_token_mapper()
+    for (keyword, data) in mapper.items():
         for heading, (test, group, column, column_width) in groups_keywords.iteritems():
             if test(keyword, data[0]):
-                group[keyword] = data[1].get('help', 'There is no help text available for this command')
+                group[keyword] = data[1].get('help', 'There is no help text available for this keyword')
                 groups_keywords[heading][3] = max(column_width, len(keyword))
                 keywords_groups[keyword] = (heading, data[1])
+                break
 
     if self.value:
         scan_keyword = '_'.join(str(self.value).lower().split(' '))
-        if scan_keyword in dict(tokens):
-            kw_data = dict(tokens)[scan_keyword]
+        if scan_keyword in mapper:
+            kw_data = mapper[scan_keyword]
             print "%(keyword)s - (%(type)s) %(help)s" % {
                 'keyword': str(self.value),
                 'type': keywords_groups[scan_keyword][0][:-1],
@@ -1358,28 +1362,19 @@ def interpret_help(self, interpreter, ele):
         # Set up the structure to hold the tokens in 
         # Get tokens in the language
         print "Keywords:"
-        header_format = "    {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
-            groups_keywords['Nouns'][3],
-            groups_keywords['Verbs'][3],
-            groups_keywords['Interpreter Verbs'][3])
-        column_format = "      {Nouns: <%d}    {Verbs: <%d} {Interpreter Verbs: <%d}" % (
-            groups_keywords['Nouns'][3],
-            groups_keywords['Verbs'][3],
-            groups_keywords['Interpreter Verbs'][3])
-        longest_column_length = max(
-            len(groups_keywords['Nouns'][1]),
-            len(groups_keywords['Verbs'][1]),
-            len(groups_keywords['Interpreter Verbs'][1]))
-        print header_format.format(
+        header_format = "    " + "    ".join(["|{%s: <%d}|" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
+        column_format = "    " + "    ".join(["|{%s: >%d}|" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
+        longest_column_length = max(len(groups_keywords[group][1]) for group in groups_keywords)
+        headers = header_format.format(
             **(dict((n, n) for n in groups_keywords.keys())))
-        rows = zip(
-            list(sorted(groups_keywords['Nouns'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Nouns'][1]))),
-            list(sorted(groups_keywords['Verbs'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Verbs'][1]))),
-            list(sorted(groups_keywords['Interpreter Verbs'][1].keys())) + ([''] * (longest_column_length - len(groups_keywords['Interpreter Verbs'][1]))),)
+        headers_underline = "    " + "".join(["-"] * (len(headers) - 4))
+        print headers
+        print headers_underline
+        rows = zip(*[list(sorted(groups_keywords[group][1].keys())) + [''] * (longest_column_length - len(groups_keywords[group][1])) for group in groups_keywords])
         for row_data in rows:
             print column_format.format(
                 **(dict(zip(groups_keywords.keys(), [' '.join(kw.capitalize().split('_')) for kw in row_data]))))
-
+        print "Commands must have exactly one Verb.  Most InterpreterVerbs do not allow a Noun, most other Verbs do.  Regular Verbs allow a command modifier, Interpreter Verbs do not."
         print
         print "Example:"
         print """    Click the "Submit" button"""
