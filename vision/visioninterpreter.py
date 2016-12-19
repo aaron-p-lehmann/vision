@@ -1321,10 +1321,10 @@ def interpret_quit(self, interpreter, ele):
 def interpret_help(self, interpreter, ele):
     # The keywords, grouped by column headers
     groups_keywords = collections.OrderedDict([
-        ('Nouns', [
-            lambda keyword, keyword_type: keyword_type == visionparser.Noun, collections.OrderedDict(), 0, 0]),
         ('Verbs', [
-            lambda keyword, keyword_type: keyword_type == visionparser.Verb, collections.OrderedDict(), 1, 0]),
+            lambda keyword, keyword_type: keyword_type == visionparser.Verb, collections.OrderedDict(), 0, 0]),
+        ('Nouns', [
+            lambda keyword, keyword_type: keyword_type == visionparser.Noun, collections.OrderedDict(), 1, 0]),
         ('Interpreter Verbs', [
             lambda keyword, keyword_type: keyword_type == visionparser.InterpreterVerb, collections.OrderedDict(), 2, 0]),
         ('Command Modifiers', [
@@ -1348,6 +1348,7 @@ def interpret_help(self, interpreter, ele):
                 keywords_groups[keyword] = (heading, data[1])
                 break
 
+    print "Keywords:"
     if self.value:
         scan_keyword = '_'.join(str(self.value).lower().split(' '))
         if scan_keyword in mapper:
@@ -1361,15 +1362,12 @@ def interpret_help(self, interpreter, ele):
     else:
         # Set up the structure to hold the tokens in 
         # Get tokens in the language
-        print "Keywords:"
-        header_format = "    " + "    ".join(["|{%s: <%d}|" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
-        column_format = "    " + "    ".join(["|{%s: >%d}|" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
+        header_format = "    " + "    ".join(["{%s: <%d}" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
+        column_format = "        " + "    ".join(["{%s: <%d}" % (group, max(keywords[3], len(group))) for (group, keywords) in groups_keywords.items()])
         longest_column_length = max(len(groups_keywords[group][1]) for group in groups_keywords)
         headers = header_format.format(
             **(dict((n, n) for n in groups_keywords.keys())))
-        headers_underline = "    " + "".join(["-"] * (len(headers) - 4))
         print headers
-        print headers_underline
         rows = zip(*[list(sorted(groups_keywords[group][1].keys())) + [''] * (longest_column_length - len(groups_keywords[group][1])) for group in groups_keywords])
         for row_data in rows:
             print column_format.format(
