@@ -1,13 +1,72 @@
 """
-This implements the Vision interpreter
+This implements the Vision interpreter, tokenizer, and parser machinery
 """
 
 # Python libraries
 import attrs
+import collections
+import copy
 
 # Vision libraries
 import tokens
 import scanner
+
+
+@attr.s(slots=True)
+class Lexicon(object):
+    """
+    A Lexicon is an ephemeral object that condenses Modules into
+    information of how to handle the tokens in the current Command.
+    """
+
+@attr.s(slots=True)
+class Tokenizer(object):
+    """
+    A Tokenizer is an ephemeral iterator that generates the tokens from
+    a line of Vision code.
+    """
+
+    command=attr.ib(
+        validator=attr.validators.instance_of(tokens.Command))
+    definitions=attr.ib(
+        default=attr.Factory(collections.OrderedDict),
+        validator=attr.validators.instance_of(collections.Mapping))
+    position=attr.ib(
+        init=False,
+        default=0)
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        errorstart = None
+        try:
+            while self.position < len(self.code):
+                for pattern, definition in definitions.iteritems():
+                    match = re.match(pattern, self.command.code[self.position:], re.IGNORECASE)
+                    if match:
+                        if errorstart is not None:
+                            raise ValueError(
+                                "Unrecognized token error: %s" % self.command.code[errorstart:self.position])
+                        else:
+                            token = definition['token'](
+                                code_provider=CommandCodeProvider(
+                                    command=self.command,
+                                    start=match.start(),
+                                    end=match.end()),
+                                definition=copy.deepcopy(definition))
+                            self.position=match.end()
+                            return token
+                else:
+                    if errorstart is None:
+                        errorstart = self.position
+                self.position += 1
+            else:
+                raise ValueError(
+                    "Unrecognized token error: %s" % self.command.code[errorstart:])
+        except ValueError as ve:
+            ve.tokenizer = self
+            raise
 
 @attr.s(slots=True)
 class Interpreter(object):
