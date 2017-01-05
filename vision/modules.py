@@ -6,10 +6,10 @@ This file implements Modules and Definitions.
 import attr
 import pprint
 import ordered_set
+import collections
 
 # Vision Libraries
 import tokens
-import interpreter
 
 #@attr.s(slots=True)
 #class Lexicon(object):
@@ -224,89 +224,7 @@ class Definition(object):
     """
     This is a base class for FullDefinition and DefinitionAlias
     """
-    token_type = attr.ib(
-        validator=attr.validators.optional(attr.validators.instance_of(tokens.ParseUnit)))
-    title = attr.ib(
-        default=None,
-        validator=attr.validators.optional(attr.validators.instance_of(str)))
-    name = attr.ib(
-        default=None,
-        validator=attr.validators.optional(attr.validators.instance_of(str)),
-        repr=False)
-    aliases = attr.ib(
-        init=False,
-        default=attr.Factory(ordered_set.OrderedSet),
-        validator=attr.validators.instance_of(collections.Sequence),
-        repr=False)
-
-    """
-    We'll create a simple definition for a 'click' keyword, letting the
-    defaults handle things as much as possible.
-    >>> verb = Definition(
-    ...   token_type=tokens.Verb)
-    >>> verb
-    """
-
-    def __attrs_post_init__(self):
-        self.title = self.title or self.name or self.token_type.__name__
-
-    def __eq__(self, other):
-        return isinstance(other, Definition) and self.name==other.name and isinstance(other.token_type, type(self.token_type))
-
-    def update(self, other, merge=True):
-        """
-        Update this definition with the attributes of other.  This will
-        work on all Definitions.  It tests if the name and
-        token_type match, and updates the title, if necessary.
-
-        We if other has a title, we change self's title to it.
-        >>> verb_copy = copy.deepcopy(verb)
-        >>> verb_copy.title
-        'Verb'
-        >>> update_title = Definition(
-        ...   title="super verb",
-        ...   token_type=tokens.Verb)
-        >>> verb_copy.update(update_title) is update_title
-        >>> verb_copy.title
-        'super verb'
-
-        If the title tests False, self will not be updated...
-        >>> update_title = Definition(
-        ...   title="",
-        ...   token_type=tokens.Verb)
-        >>> verb_copy.update(update_title) is update_title
-        >>> verb_copy.title
-        'super verb'
-
-        Unless the merge flag on the method is set to False.
-        >>> verb_copy.update(update_title, merge=False) is update_title
-        >>> verb_copy.title
-        ''
-
-        An exception is raised if the updating definition has a different name...
-        >>> update_wrong_name = FullDefinition(
-        ...   name='click wrong name',
-        ...   token_type=tokens.Verb)
-        >>> verb_copy.update(update_wrong_name)
-
-        Or if the token_type is different.
-        >>> update_wrong_token_type = FullDefinition(
-        ...   token_type=tokens.Noun)
-        >>> verb_copy.update(update_wrong_token_type)
-        """
-
-        if self.name != other.name:
-            raise ValueError(
-                "Definition '%s' cannot be updated with '%s', name mismatch" % (self.name, other.name))
-        elif not isinstance(other.token_type, type(self.token_type)):
-            raise ValueError(
-                "Definition '%s' cannot be updated with '%s', token_type mismatch" % (self.name, other.name))
-
-        other_copy = copy.deepcopy(other)
-        self.other = (other_copy.title or self.title) if merge else other_copy.title
-        self.validate(self)
-
-        return other
+    pass
 
 @attr.s(
     slots=True,
@@ -323,6 +241,38 @@ class FullDefinition(Definition):
     ...   name='click',
     ...   token_type=tokens.Verb)
     >>> click
+    """
+
+    token_type = attr.ib(
+        validator=attr.validators.instance_of(tokens.ParseUnit))
+    """
+    token_type is the type of token this keyword will generate.  It's
+    here more as a marker than as the type that will actually be used,
+    as it's possible some modules may define their own token types
+    decended from the ones provided in the tokens python module.
+    token_type must be a ParseUnit.
+    >>> parse_unit_token_type = FullDefinition(
+    ...   name='parse_unit',
+    ...   token_type=tokens.Verb)
+    >>> parse_unit_token_type
+
+    An exception will be raised if the token_type is not provided...
+    >>> must_provide_a_token_type = FullDefinition(
+    ...   name='no token type')
+
+    or if the token_type is not a ParseUnit.
+    >>> token_type_must_be_parse_unit = FullDefinition(
+    ...   name='no token type',
+    ...   token_type=None)
+    """
+
+    name = attr.ib(
+        default=None,
+        validator=attr.validators.optional(attr.validators.instance_of(str)))
+    """
+    name is the name of a keyword definition, which will be used to look
+    it up in the Module.  If this is None, then this is a definition
+    that will be used as a base for all tokens of this token_type.
     """
 
     pattern = attr.ib(
@@ -348,7 +298,7 @@ class FullDefinition(Definition):
         validator=lambda self, name, value: (
             att.validators.instance_of(collections.Sequence)(self, name, value) and
             [att.validators.instance_of(Module)(self, name, v) for v in values] and
-            value[0])))
+            value[0]))
     """
     modules keeps track of what modules have updated this definition
     from their own definitions or registered it.  It cannot be provided at initialization...
@@ -427,7 +377,6 @@ class FullDefinition(Definition):
     based on their parent tokens.  This is a Mapping of consumers ->
     callables.  The consumer is either a string or a ParseUnit.  If
     these conditions are not met, an exception is raised.
-
     >>> interpretations_must_be_a_mapping = FullDefinition(
     ...   name='select',
     ...   token_type=tokens.Verb,
@@ -472,15 +421,28 @@ class FullDefinition(Definition):
     ...   outputters={'fred':None})
     """
 
+    aliases = attr.ib(
+        init=False,
+        default=attr.Factory(ordered_set.OrderedSet),
+        validator=attr.validators.instance_of(collections.Sequence),
+        repr=False)
+    """
+    aliases is an OrderedSet of the aliases to this Definition.  This is
+    here so that if the definition is removed, the aliases can be as
+    well.  It is not provided to the init function, if one tries, and
+    exception is raised.
+    >>> cant_provide_aliases = FullDefinition(
+    ...   name='select',
+    ...   token_type=tokens.Verb,
+    ...   aliases=[])
+    """
+
     def __attrs_post_init__(self):
         """
         Set up the token_type to be whatever the matching token_type in
         its modules module_tokens mapping is.  Also set up the pattern
         to be based on the name, if none is provided.
         """
-
-        super(self, FullDefinition).__attrs_post_init__()
-
         for module in reversed(self.modules):
             if self.token_type in module.module_tokens:
                 self.token_type = module.module_tokens[self.token_type]
@@ -489,11 +451,14 @@ class FullDefinition(Definition):
         if self.pattern is None and self.name is not None:
             self.pattern = r"[ \t]+".join(self.name.split)
 
+    def __eq__(self, other):
+        return isinstance(other, Definition) and self.name==other.name and isinstance(other.token_type, type(self.token_type))
+
     def _validate_callable_mapping(self, name, value):
-        bad_outputters = dict(k, v) for (k, v) in value.items() if not callable(v))
+        bad_outputters = dict((k, v) for (k, v) in value.items() if not callable(v))
         if bad_outputters:
             raise ValueError((
-                ("The following %s in the definition of %s:%s have uncallable values\n" % (name, self.module.name, self.name))
+                ("The following %s in the definition of %s:%s have uncallable values\n" % (name, self.module.name, self.name)) +
                 pprint.pformat(bad_outputters)))
 
     def _validate_consumer(self, name, value):
@@ -524,12 +489,12 @@ class FullDefinition(Definition):
             if bad_consumers:
                 # There were invalid consumers given
                 raise ValueError((
-                    ("The following consumers in the definition of %s:%s have consumers of the wrong type\n" % (self.module.name, self.name))
+                    ("The following consumers in the definition of %s:%s have consumers of the wrong type\n" % (self.module.name, self.name)) +
                     pprint.pformat(bad_consumers)))
             if not_callables:
                 # There were hook implementations that aren't callable
                 raise ValueError((
-                    ("The following consumerss in the definition of %s:%s have hooks that are not callable\n" % (self.module.name, self.name))
+                    ("The following consumerss in the definition of %s:%s have hooks that are not callable\n" % (self.module.name, self.name)) +
                     pprint.pformat(not_callables)))
 
         return True
@@ -547,6 +512,18 @@ class FullDefinition(Definition):
         This is to be used by Lexicons to create the definitions to be
         given to the Tokenizer.
 
+        An exception is raised if the updating definition has a
+        different name...
+        >>> update_wrong_name = Definition(
+        ...   name='click wrong name',
+        ...   token_type=tokens.Verb)
+        >>> verb_copy.update(update_wrong_name)
+
+        Or if the token_types are different.
+        >>> update_wrong_token_type = Definition(
+        ...   token_type=tokens.Noun)
+        >>> verb_copy.update(update_wrong_token_type)
+
         We can update one defintition with another to change the pattern.
         >>> click_copy = copy.deepcopy(click)
         >>> click_copy.pattern
@@ -560,7 +537,7 @@ class FullDefinition(Definition):
         >>> click_copy.pattern
         'otherpattern'
 
-        If the updating definition doesn't have a that tests True, it
+        If the updating definition doesn't have a pattern that tests True, it
         will not be copied.
         >>> update_pattern.pattern=''
         >>> click_copy.update(update_pattern) is update_pattern
@@ -640,8 +617,13 @@ class FullDefinition(Definition):
         is most likely to happen in the case of a Noun, so we'll show an
         example of that in the update method for CompilableDefinition.
         """
+        if self.name != other.name:
+            raise ValueError(
+                "Definition '%s' cannot be updated with '%s', name mismatch" % (self.name, other.name))
+        if not isinstance(other.token_type, type(self.token_type)):
+            raise ValueError(
+                "Definition '%s' cannot be updated with '%s', token_type mismatch" % (self.name, other.name))
 
-        other = super(self, FullDefinition).update(other, merge=merge)
         if isinstance(other, FullDefinition):
             other_copy = copy.deepcopy(other)
             modules = collections.OrderedDict(zip(self.modules, itertools.repeat(True)) if merge else {})
@@ -679,12 +661,12 @@ class CompilableDefinition(FullDefinition):
             attr.validators.instance_of(collections.Sequence)(self, name, value) and
             [attr.validators.instance_of(str)(self, name, v) for v in value]),
         repr=False)
+
     """
     good_xpath_templates is a Sequence of strings representing the
     xpaths matching html that is considered "good form" to use.  These
     wlll not result in a warning if the element is found using these.
     An exception is raised if it is not a Sequence of strings.
-
     >>> xpaths_must_be_sequences = CompilableDefinition(
     ...   name='button',
     ...   token_type=tokens.Noun,
@@ -710,7 +692,6 @@ class CompilableDefinition(FullDefinition):
     after all good xpaths have failed.  This must be a Sequence of
     strings, and none of them can match any of the "good" xpaths.  If
     these requirements are not matched, and exception is raised.
-
     >>> xpaths_must_be_sequences = CompilableDefinition(
     ...   name='button',
     ...   token_type=tokens.Noun,
@@ -741,7 +722,6 @@ class CompilableDefinition(FullDefinition):
     scrolling it to the center of the screen to make screenshots
     easier).  An exception is raised if this is not a Sequnce of
     callables.
-
     >>> filters_must_be_sequences = CompilableDefinition(
     ...   name='button',
     ...   token_type=tokens.Noun,
@@ -849,3 +829,7 @@ class DefinitionAlias(Definition):
 
     def __getattr__(self, name):
         return getattr(self.module.definitions[self.target_name], name)
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod()
