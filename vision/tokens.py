@@ -37,17 +37,7 @@ class ParseUnit(object):
     This represents anything the tokenizer recognizes.  It has the information
     necessary to find the raw code in its command's scanner, and methods to
     output a cleaned up version.
-
-    First, make a Token.  We'll use a StringCodeProvider for testing
-    purposes.
-    >>> code = "Some code for the test"
-    >>> ParseUnit(
-    ...  code_provider=StringCodeProvider(
-    ...    code=code))
-    ParseUnit(code_provider=StringCodeProvider(code='Some code for the test', start=0, end=None))
-
     """
-
     code_provider=attr.ib(
         validator=attr.validators.instance_of(CodeProvider),
         repr=True,
@@ -69,12 +59,23 @@ class ParseUnit(object):
         repr=False,
         cmp=False)
 
+    """
+    First, make a Token.  We'll use a StringCodeProvider for testing
+    purposes.
+    >>> code = "Some code for the test"
+    >>> ParseUnit(
+    ...  code_provider=StringCodeProvider(
+    ...    code=code))
+    ParseUnit(code_provider=StringCodeProvider(code='Some code for the test', start=0, end=None))
+
+    """
+
     def __str__(self):
         """
         Gets the proper string representaion of the token using the
         function provided by the definition
         """
-        return self.definition.prettified_code(self)
+        return self.definition.outputters['prettified'](self)
 #        def get_proper_tokens(self):
 #            found_first_keyword = False
 #            for token in self.tokens:
@@ -104,7 +105,7 @@ class ParseUnit(object):
         its children.
         """
         return str(self.code_provider)
-        #return self.definition.raw_code(self)
+        #return self.definition['raw'](self)
 
     @property
     def token(self):
@@ -138,7 +139,6 @@ class Token(ParseUnit):
     """
     This is the base object of all Tokens.
     """
-    pass
 
 @attr.s(slots=True)
 class Noun(Token):
@@ -148,7 +148,6 @@ class Noun(Token):
     many of the other Token classes, but it is used to type check while
     parsing.
     """
-    pass
 
 @attr.s(slots=True)
 class AttributeNoun(Noun):
@@ -320,27 +319,6 @@ class InteractiveFileLiteral(FileLiteral):
             lines.append(
                 raw_input("Type the file, line by line.  Type %s by itself on the line to finish typing:  " % end).rstrip("\n"))
         return "\n".join(lines[:-1])
-
-    code_provider=attr.ib(
-        validator=attr.validators.instance_of(CodeProvider),
-        repr=True,
-        cmp=True)
-    definition=attr.ib(
-        default=None,
-        repr=False,
-        cmp=False)
-    tokens=attr.ib(
-        default=attr.Factory(list),
-        validator=attr.validators.instance_of(collections.MutableSequence),
-        init=False,
-        repr=False,
-        cmp=False)
-    children=attr.ib(
-        default=attr.Factory(list),
-        validator=attr.validators.instance_of(collections.MutableSequence),
-        init=False,
-        repr=False,
-        cmp=False)
 
 @attr.s(
     slots=True,

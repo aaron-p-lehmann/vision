@@ -3,14 +3,13 @@ This implements the Vision interpreter, tokenizer, and parser machinery
 """
 
 # Python libraries
-import attrs
+import attr
 import collections
 import copy
 
 # Vision libraries
 import tokens
 import scanner
-
 
 @attr.s(slots=True)
 class Lexicon(object):
@@ -49,7 +48,7 @@ class Tokenizer(object):
                             raise ValueError(
                                 "Unrecognized token error: %s" % self.command.code[errorstart:self.position])
                         else:
-                            token = definition['token'](
+                            token = definition.token_type(
                                 code_provider=CommandCodeProvider(
                                     command=self.command,
                                     start=match.start(),
