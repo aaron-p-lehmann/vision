@@ -37,6 +37,14 @@ class ParseUnit(object):
     This represents anything the tokenizer recognizes.  It has the information
     necessary to find the raw code in its command's scanner, and methods to
     output a cleaned up version.
+
+    First, make a Token.  We'll use a StringCodeProvider for testing
+    purposes.
+    >>> code = "Some code for the test"
+    >>> ParseUnit(
+    ...  code_provider=StringCodeProvider(
+    ...    code=code))
+    ParseUnit(code_provider=StringCodeProvider(code='Some code for the test', start=0, end=None))
     """
     code_provider=attr.ib(
         validator=attr.validators.instance_of(CodeProvider),
@@ -59,16 +67,16 @@ class ParseUnit(object):
         repr=False,
         cmp=False)
 
-    """
-    First, make a Token.  We'll use a StringCodeProvider for testing
-    purposes.
-    >>> code = "Some code for the test"
-    >>> ParseUnit(
-    ...  code_provider=StringCodeProvider(
-    ...    code=code))
-    ParseUnit(code_provider=StringCodeProvider(code='Some code for the test', start=0, end=None))
-
-    """
+    @classmethod
+    def validate(cls, obj, name, value):
+        try:
+            subclass = issubclass(value, cls)
+        except TypeError as te:
+            raise TypeError("%s is not a %s" % (value, cls))
+        else:
+            if not subclass:
+                raise TypeError("%s is not a %s" % (value, cls))
+        return True
 
     def __str__(self):
         """
@@ -472,4 +480,4 @@ class CommandCodeProvider(CodeProvider):
 
 if __name__ == "__main__":
     import doctest
-    doctest.testmod()
+    print doctest.testmod()
