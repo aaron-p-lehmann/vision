@@ -166,8 +166,18 @@ class AttributeNoun(Noun):
 @attr.s(slots=True)
 class Verb(Token):
     """
-    This represents a Verb, a thing for Vision to do, such as clicking
+    This represents a Verb, a thing for the webdriver to do, such as clicking
     or typing.  This class is not materially different from many of the
+    other Token classes, but it is used to type check while parsing.
+    """
+    pass
+
+@attr.s(slots=True)
+class InteractiveVerb(Verb):
+    """
+    This represents an InteractiveVerb, a command directed at the Vision
+    interpreter, such as saving the test, rather than for the webdriver
+    to do.  This class is not materially different from many of the
     other Token classes, but it is used to type check while parsing.
     """
     pass
@@ -429,16 +439,29 @@ class CommandCodeProvider(CodeProvider):
     ...     code_provider=scp1))
     >>> str(ccp1)
     'Some code for the test'
+    >>> ccp2 = CommandCodeProvider(
+    ...   command=Command(
+    ...     code_provider=scp1),
+    ...   start=5)
+    >>> str(ccp2)
+    'code for the test'
+    >>> ccp3 = CommandCodeProvider(
+    ...   command=Command(
+    ...     code_provider=scp1),
+    ...   start=5,
+    ...   end=9)
+    >>> str(ccp3)
+    'code'
 
     CommandCodeProviders can be compared if the CodeProviders of the
     CodeProviders of the underlying commands can be compared.
     >>> scp2 = StringCodeProvider(code=code1)
     >>> scp1.can_compare_to(scp2)
     True
-    >>> ccp2 = CommandCodeProvider(
+    >>> ccp4 = CommandCodeProvider(
     ...   command=Command(
     ...     code_provider=scp2))
-    >>> ccp1.can_compare_to(ccp2)
+    >>> ccp1.can_compare_to(ccp4)
     True
 
     If the underlying CodeProviders can't be compared, neither can the
@@ -449,18 +472,18 @@ class CommandCodeProvider(CodeProvider):
     False
     >>> scp3.can_compare_to(scp1)
     False
-    >>> ccp3 = CommandCodeProvider(
+    >>> ccp5 = CommandCodeProvider(
     ...   command=Command(
     ...     code_provider=scp3))
-    >>> ccp1.can_compare_to(ccp3)
+    >>> ccp1.can_compare_to(ccp5)
     False
-    >>> ccp3.can_compare_to(ccp1)
+    >>> ccp5.can_compare_to(ccp1)
     False
     """
     command = attr.ib(validator=attr.validators.instance_of(Command))
     start = attr.ib(
         default=0,
-        validator=lambda self, name, value:self.code[value])
+        validator=lambda self, name, value:self.command.code[value])
     end = attr.ib(
         default=None,
         validator=attr.validators.optional(lambda self, name, value:self.code[self.start:value]))
@@ -470,7 +493,7 @@ class CommandCodeProvider(CodeProvider):
         return str(self)
 
     def __str__(self):
-        return str(self.command.code)
+        return str(self.command.code)[self.start:self.end]
 
     def can_compare_to(self, other):
         """
