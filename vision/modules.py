@@ -178,14 +178,18 @@ class Lexicon(object):
                 defn = module[key, token_type]
             except RemovedDefinition as rd:
                 definition = None
+            except KeyError as ke:
+                pass
             else:
                 if not definition:
                     definition = defn.type(
                         name=key,
+                        pattern=defn.pattern,
                         token_type=token_type)
                 elif definition.type is not defn.type:
                     temp_definition = defn.type(
                         name=key,
+                        pattern=defn.pattern,
                         token_type=token_type)
                     temp_definition.update(definition)
                     definition = temp_definition
@@ -221,7 +225,7 @@ class Lexicon(object):
         """
         return reduce(operator.or_, (module.available_modules for module in self.modules))
 
-    def add_modules(self, module):
+    def add_module(self, module):
         """
         This adds a module to the Lexicon as the most recent.  Its
         definitions will shadow any older ones.
@@ -423,7 +427,9 @@ class Module(object):
           ...
         KeyError: 'click'
         >>> module['click', tokens.Verb]
-        FullDefinition(token_type=<class 'tokens.Verb'>, title='click', pattern='click')
+        Traceback (most recent call last):
+          ...
+        KeyError: 'click'
 
         We'll add a definition for the 'click' keyword, and get a
         definition from the module by keyword.  We'll also make a
@@ -459,6 +465,12 @@ class Module(object):
         >>> module_verb.consumers[tokens.Command]['postconsume'](None, None, None)
         'postconsume on Verb'
 
+        We still can't get definitions for keys that aren't in this module, though.
+        >>> module['select', tokens.Verb]
+        Traceback (most recent call last):
+          ...
+        KeyError: 'select'
+
         If we look for 'click', we'll get a merged definition that has
         the stuff from both.
         >>> module_click = module['click']
@@ -491,7 +503,6 @@ class Module(object):
         multiple modules.
         Trying to get a definition that has been removed results in a
         RemovedDefinition eception being thrown.
-
         >>> module_removed_keyword = Module(name='removed keyword')
         >>> module_removed_keyword.add_definition(
         ...   name='click',
@@ -548,13 +559,16 @@ class Module(object):
             # don't have one
             token_type = None
 
-        if keyword and keyword in self.definitions:
-            # We have a valid keyword
-            if not self.definitions[keyword]:
-                # This keyword is here to mark that this module removes
-                # it.  raise the RemovedDefinition exception
-                raise RemovedDefinition(
-                    "Definition for '%s' removed in module '%s'" % (keyword, self.name))
+        if keyword:
+            if keyword in self.definitions:
+                # We have a valid keyword
+                if not self.definitions[keyword]:
+                    # This keyword is here to mark that this module removes
+                    # it.  raise the RemovedDefinition exception
+                    raise RemovedDefinition(
+                        "Definition for '%s' removed in module '%s'" % (keyword, self.name))
+            else:
+                raise KeyError(keyword)
 
         # if the token_type is None, we need to get one
         if not token_type:
@@ -566,7 +580,6 @@ class Module(object):
 
         # Make a new definition and update it with definitions for the
         # token types in the MRO of the token_type
-
         definition_type = None
         for key in [keyword] + [cls for cls in token_type.__mro__ if issubclass(cls, tokens.ParseUnit)]:
             # Search in the token_type->definition mappings to find the
@@ -927,6 +940,13 @@ class FullDefinition(Definition):
             self._validate_consumer(name, value) if isinstance(value, collections.MutableMapping) else None),
         repr=False)
 
+    tokenizations = attr.ib(
+        default=attr.Factory(dict),
+        validator=lambda self, name, value: (
+            attr.validators.optional(attr.validators.instance_of(collections.MutableMapping))(self, name, value),
+            self._validate_tokenizations(name, value) if isinstance(value, collections.MutableMapping) else None),
+        repr=False)
+
     interpretations = attr.ib(
         default=attr.Factory(dict),
         validator=lambda self, name, value: (
@@ -955,6 +975,18 @@ class FullDefinition(Definition):
 
     def __eq__(self, other):
         return isinstance(other, Definition) and self.name==other.name and isinstance(other.token_type, type(self.token_type))
+
+    def _validate_tokenizations(self, name, value):
+        bad_outputters = dict((k, v) for (k, v) in value.items() if not callable(v))
+        bad_keys = dict((k, v) for (k, v) in value.items() if not isinstance(k, str))
+        if bad_outputters:
+            raise ValueError((
+                ("The following %s in the definition of '%s' have uncallable values: " % (name, self.name)) +
+                pprint.pformat(bad_outputters)))
+        if bad_keys:
+            raise ValueError((
+                ("The following %s in the definition of '%s' have keys that are not strings: " % (name, self.name)) +
+                pprint.pformat(bad_keys)))
 
     def _validate_callable_mapping(self, name, value):
         bad_outputters = dict((k, v) for (k, v) in value.items() if not callable(v))

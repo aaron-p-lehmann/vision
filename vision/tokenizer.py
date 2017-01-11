@@ -86,16 +86,94 @@ def tokenize(command, lexicon):
     Traceback (most recent call last):
       ...
     BadToken: Unrecognized token 'barney' in command 'fred barney fred'
+
+    If the definition the tokenizer is using includes a 'posttokenize'
+    consumer hook, tokenizer() will call it, passing the new token and
+    the lexicon.  This might make new tokens available.
+
+    Let's make a couple of modules test this:
+
+    This module will add a 'barney' keyword to the lexicon, while
+    removing 'wilma' from it.
+    >>> modifying_module = modules.Module(name="modifiying module")
+    >>> modifying_module.add_definition(modules.FullDefinition(
+    ...   name="barney",
+    ...   token_type=tokens.Verb))
+    >>> modifying_module.add_definition(
+    ...   name="wilma",
+    ...   definition=None)
+
+    This module adds a 'fred' keyword, a 'wilma' keyword, and a 'space'
+    keyword.  Once the 'fred' keyword is tokenized, the modifying module
+    is added to the lexicon.
+    >>> base_module = modules.Module(name="base module")
+    >>> base_module.add_definition(modules.FullDefinition(
+    ...   name="fred",
+    ...   token_type=tokens.Verb,
+    ...   consumers={
+    ...     tokens.Command:{
+    ...       'posttokenize':lambda token, lexicon:lexicon.add_module(modifying_module)}}))
+    >>> base_module.add_definition(modules.FullDefinition(
+    ...   name="wilma",
+    ...   token_type=tokens.Verb))
+    >>> base_module.add_definition(
+    ...   definition=modules.FullDefinition(
+    ...     name='space',
+    ...     pattern=' ',
+    ...     token_type=tokens.Token))
+
+    tokenize() can tokenize 'fred' after 'wilma' with no problem...
+    >>> pprint.pprint([tok.code for tok in tokenize(
+    ...   command=tokens.Command(
+    ...     code_provider=tokens.StringCodeProvider(
+    ...       code="wilma fred")),
+    ...   lexicon=modules.Lexicon(
+    ...     modules=ordered_set.OrderedSet([base_module])))])
+    ['wilma', ' ', 'fred']
+
+    However, it can't tokenize 'wilma' after 'fred', because tokenizing
+    'fred' results in 'wilma' being removed from the lexicon.
+    >>> tokenize(
+    ...   command=tokens.Command(
+    ...     code_provider=tokens.StringCodeProvider(
+    ...       code="fred wilma")),
+    ...   lexicon=modules.Lexicon(
+    ...     modules=ordered_set.OrderedSet([base_module])))
+    Traceback (most recent call last):
+      ...
+    BadToken: Unrecognized token 'wilma' in command 'fred wilma'
+
+    tokenize can tokenize 'barney' if it's after 'fred'...
+    >>> pprint.pprint([tok.code for tok in tokenize(
+    ...   command=tokens.Command(
+    ...     code_provider=tokens.StringCodeProvider(
+    ...       code="fred barney")),
+    ...   lexicon=modules.Lexicon(
+    ...     modules=ordered_set.OrderedSet([base_module])))])
+    ['fred', ' ', 'barney']
+
+    But not if it's before 'fred', because it's not available to the
+    lexicon at that point.
+    >>> tokenize(
+    ...   command=tokens.Command(
+    ...     code_provider=tokens.StringCodeProvider(
+    ...       code="barney fred")),
+    ...   lexicon=modules.Lexicon(
+    ...     modules=ordered_set.OrderedSet([base_module])))
+    Traceback (most recent call last):
+      ...
+    BadToken: Unrecognized token 'barney' in command 'barney fred'
     """
     code = str(tokens.CommandCodeProvider(command=command))
-    definitions = collections.OrderedDict(
-        sorted(lexicon.items(), key=lambda pair: len(pair[1].pattern)))
     start = 0
-    end = 0
+    end = None
     found_tokens = []
     match = None
     while code[start:]:
         # So long as there is code to tokenize, we tokenize code
+        def_items = lexicon.items()
+        definitions = collections.OrderedDict(
+            sorted(def_items, key=lambda pair: len(pair[1].pattern)))
         for keyword, definition in definitions.items():
             compiled = re.compile(
                 pattern=definition.pattern,
@@ -104,13 +182,19 @@ def tokenize(command, lexicon):
                 string=code,
                 pos=start)
             if match:
-                if not end:
-                    found_tokens.append(definition.token_type(
+                if end is None:
+                    new_token = definition.token_type(
                         code_provider=tokens.CommandCodeProvider(
                             command=command,
                             start=match.start(),
                             end=match.end()),
-                        definition=definition))
+                        definition=definition)
+                    for command_type in [cls for cls in type(command).__mro__ if issubclass(cls, tokens.Command)]:
+                        if command_type in definition.consumers and 'posttokenize' in definition.consumers[command_type]:
+                            definition.consumers[command_type]['posttokenize'](
+                                token=new_token,
+                                lexicon=lexicon)
+                    found_tokens.append(new_token)
                     start = match.end()
 
                 # We've found a token, break this loop
@@ -120,16 +204,16 @@ def tokenize(command, lexicon):
             # down and try again.  At this point, we're trying to get
             # the characters that are breaking things to create an error
             # message
-            if not end:
+            if end is None:
                 end = start
             start += 1
-        if match and end:
+        if match and end is not None:
             # we found a match after finding an error, break out of this
             # loop
             break
         match = None
 
-    if end:
+    if end is not None:
         # We're looking to create an error message, so raise
         # BadToken
         raise BadToken(

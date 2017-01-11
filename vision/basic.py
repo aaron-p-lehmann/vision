@@ -167,7 +167,7 @@ structure.add_definition(modules.FullDefinition(
     token_type=tokens.Verb,
     consumers={
         tokens.Command: {
-            'posttokenize': lambda token, parent, interpreter: token.command.lexicon.add_module(_module_loading),
+            'posttokenize': lambda token, lexicon: lexicon.add_module(_module_loading),
             'postconsume': lambda token, parent, interpreter: setattr(token.command, 'scopechange', 1)}}))
 structure.add_definition(modules.FullDefinition(
     name=None,
