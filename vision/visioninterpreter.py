@@ -1135,7 +1135,9 @@ def interpret_switch_to_window(self, interpreter, ele=None, resize=True):
         for handle in driver.window_handles:
             if current_handle != handle:
                 driver.switch_to_window(handle)
-                if driver.title.startswith(title):
+                if driver.title.startswith(title) or (
+                    driver.current_url.endswith(title) and title.startswith("?")):
+                    return handle
                     return handle
         else:
             driver.switch_to_window(current_handle)
