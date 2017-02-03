@@ -188,6 +188,24 @@ def compile_button_to_xpath(self, nots=(), base_axis=None, trusteds=()):
     nots = od_nots.keys()
     return (tuple(trusteds), tuple(patterns), tuple(nots))
 
+def compile_icon_button_to_xpath(self, type_attr=None, compare_type='title', nots=(), base_axis=None, trusteds=()):
+    type_attr = type_attr or self.value
+    predicate = ""
+    if type_attr:
+        if not isinstance(type_attr, tuple):
+            type_attr = (type_attr,)
+        predicate = "[ %s ]" % ' or '.join(
+            ["@%s='%s'" % (compare_type, t) for t in type_attr])
+    node_xpaths, node_nots, node_trusteds = compile_noun_to_xpath(
+        self,
+        tag='node()',
+        additional_predicate=predicate,
+        compare_type=compare_type,
+        nots=nots,
+        trusteds=trusteds,
+        base_axis=base_axis)
+    return node_xpaths, node_nots, node_trusteds
+
 def compile_textfield_to_xpath(self, nots=(), base_axis=None, trusteds=()):
     trusteds_texts, texts, nots = compile_noun_to_xpath(
         self,
@@ -795,15 +813,22 @@ def interpret_authenticate(self, interpreter, ele):
     return True
 
 def interpret_capture(self, interpreter, ele):
+    location = {'x': 0, 'y': 0}
     if ele:
+        location = ele.location
         if hasattr(ele, 'noun') and not getattr(ele.noun, 'hover_on_capture', None):
             try:
-                selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(el, -1, -1)
+                selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(ele, -1, -1)
             except:
                 pass
         else:
             import time
             time.sleep(1)
+
+    # scroll so that the element aligns with the top of the viewport, or
+    # the viewport is at the top of the page, if there is no element
+    interpreter.webdriver.execute_script(
+        "window.scrollTo(0, arguments[0]);", location['y'])
     image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64()))).convert('RGB')
 
     if isinstance(ele, selenium.webdriver.remote.webdriver.WebElement) and ele.tag_name.lower() != 'html':
@@ -811,9 +836,9 @@ def interpret_capture(self, interpreter, ele):
         size = ele.size
         coordinates = {
             'left': location['x'],
-            'top': location['y'],
+            'top': 0,
             'right': location['x'] + size['width'],
-            'bottom': location['y'] + size['height']}
+            'bottom': size['height']}
 
         # crop and save the picture
         image=image.crop([coordinates[side] for side in ['left', 'top', 'right', 'bottom']])
@@ -1440,27 +1465,27 @@ def filter_timing(el, filt, noun):
     try:
         return filt(el, noun=noun)
     finally:
-        noun.command.timing[noun][filt.__name__] = time.time() - filter_start
+        noun.command.timing[noun][filt.__name__ if hasattr(filt, '__name__') else filt.func.__name__] = time.time() - filter_start
 
 def _displayed_filter(e, noun):
     result = e.is_displayed()
     return result
 
-def _exact_value_filter(e, noun):
+def _exact_filter(e, noun, attribute):
     # verify the widget has the right value
     if not noun.value:
         result = True
     else:
-        elval = e.get_attribute('value') or e.text
+        elval = e.get_attribute(attribute) or e.text
         result = not noun.value or elval == str(noun.value)
     return result
 
-def _starts_with_value_filter(e, noun):
+def _starts_with_filter(e, noun, attribute):
     # Verify the widget starts with the right value
     if not noun.value:
         result = True
     else:
-        elval = e.get_attribute('value') or e.text
+        elval = e.get_attribute(attribute) or e.text
         result = elval.startswith(str(noun.value))
     return result
 
@@ -1785,6 +1810,7 @@ class VisionInterpreter(object):
             'compiles': {
                 'box': compile_box_to_xpath,
                 'button': compile_button_to_xpath,
+                'icon button': compile_icon_button_to_xpath,
                 'link': functools.partial(compile_noun_to_xpath, tag='a', compare_type='link'),
                 'row': compile_row_to_xpath,
                 'table': compile_table_to_xpath,
@@ -1976,7 +2002,12 @@ class VisionInterpreter(object):
 
             # widgets on the page
             'alert': [visionparser.Noun, {'use_parent_context_for_interpretation': False}],
-            'button': [visionparser.Noun, {'filters': [_exact_value_filter, _starts_with_value_filter]}],
+            'button': [visionparser.Noun, {'filters': [
+                functools.partial(_exact_filter, attribute='value'),
+                functools.partial(_starts_with_filter, attribute='value')]}],
+            'icon_button': [visionparser.Noun, {'filters': [
+                functools.partial(_exact_filter, attribute='title'),
+                functools.partial(_starts_with_filter, attribute='title')]}],
             'box': [visionparser.Noun, {}],
             'next_button': [visionparser.Noun, {'cant_have': [visionparser.Literal]}],
             'checkbox': [visionparser.Noun, {}],
