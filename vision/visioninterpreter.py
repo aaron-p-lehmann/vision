@@ -825,20 +825,22 @@ def interpret_capture(self, interpreter, ele):
             import time
             time.sleep(1)
 
-    # scroll so that the element aligns with the top of the viewport, or
-    # the viewport is at the top of the page, if there is no element
-    interpreter.webdriver.execute_script(
-        "window.scrollTo(0, arguments[0]);", location['y'])
+    if interpreter.webdriver.capabilities['browserName'] == 'chrome':
+        # scroll so that the element aligns with the top of the viewport, or
+        # the viewport is at the top of the page, if there is no element
+        interpreter.webdriver.execute_script(
+            "window.scrollTo(0, arguments[0]);", location['y'])
     image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64()))).convert('RGB')
 
     if isinstance(ele, selenium.webdriver.remote.webdriver.WebElement) and ele.tag_name.lower() != 'html':
+        top = 0 if interpreter.webdriver.capabilities['browserName'] == 'chrome' else location['y']
         location = ele.location
         size = ele.size
         coordinates = {
             'left': location['x'],
-            'top': 0,
+            'top': top,
             'right': location['x'] + size['width'],
-            'bottom': size['height']}
+            'bottom': top + size['height']}
 
         # crop and save the picture
         image=image.crop([coordinates[side] for side in ['left', 'top', 'right', 'bottom']])
