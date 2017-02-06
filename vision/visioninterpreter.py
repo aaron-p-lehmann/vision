@@ -813,9 +813,8 @@ def interpret_authenticate(self, interpreter, ele):
     return True
 
 def interpret_capture(self, interpreter, ele):
-    location = {'x': 0, 'y': 0}
+    location = getattr(ele, 'location', {'x': 0, 'y': 0})
     if ele:
-        location = ele.location
         if hasattr(ele, 'noun') and not getattr(ele.noun, 'hover_on_capture', None):
             try:
                 selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(ele, -1, -1)
