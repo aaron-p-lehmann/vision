@@ -832,11 +832,13 @@ def interpret_capture(self, interpreter, ele):
         interpreter.webdriver.execute_script(
             "window.scrollTo(0, arguments[0]);", scrollY)
 
-    while scrollY is not False and interpreter.webdriver.execute_script('return window.scrollY;') != scrollY:
+    wait_times = 0
+    while scrollY is not False and interpreter.webdriver.execute_script('return window.scrollY;') != scrollY and wait_times < 10:
         # If we scrolled, pause for a bit until we've scrolled as high
         # as we need to
         import time
         time.sleep(1)
+        wait_times += 1
     image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64()))).convert('RGB')
 
     if isinstance(ele, selenium.webdriver.remote.webdriver.WebElement) and ele.tag_name.lower() != 'html':
