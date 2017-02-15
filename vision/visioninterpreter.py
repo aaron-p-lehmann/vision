@@ -813,37 +813,22 @@ def interpret_authenticate(self, interpreter, ele):
     return True
 
 def interpret_capture(self, interpreter, ele):
-    scrollY = False
     location = getattr(ele, 'location', {'x': 0, 'y': 0})
+    scrollY = location['y']
     if ele:
         if hasattr(ele, 'noun') and not getattr(ele.noun, 'hover_on_capture', None):
             try:
                 selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(ele, -1, -1)
-                scrollY = location['y']
             except:
                 pass
 
-    if interpreter.webdriver.capabilities['browserName'] == 'chrome':
-        # scroll so that the element aligns with the top of the viewport, or
-        # the viewport is at the top of the page, if there is no element
-        scrollY = location['y']
+    interpreter.webdriver.execute_script(
+        "window.scrollTo(0, arguments[0]);", scrollY)
 
-    if scrollY is not False:
-        interpreter.webdriver.execute_script(
-            "window.scrollTo(0, arguments[0]);", scrollY)
-
-    wait_times = 0
-    while scrollY is not False and interpreter.webdriver.execute_script('return window.scrollY;') != scrollY and wait_times < 10:
-        # If we scrolled, pause for a bit until we've scrolled as high
-        # as we need to
-        import time
-        time.sleep(1)
-        wait_times += 1
     image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64()))).convert('RGB')
 
     if isinstance(ele, selenium.webdriver.remote.webdriver.WebElement) and ele.tag_name.lower() != 'html':
-        top = 0 if interpreter.webdriver.capabilities['browserName'] == 'chrome' else location['y']
-        location = ele.location
+        top = location['y'] - interpreter.webdriver.execute_script("return window.scrollY;")
         size = ele.size
         coordinates = {
             'left': location['x'],
