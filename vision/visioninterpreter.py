@@ -914,23 +914,29 @@ def interpret_load_test(self, interpreter, ele, running=True):
     # interpreter will run
     if self.value:
         # We were told to load a file
-        try:
-            interpreter.parser.scanner = interpreter.parser.scanners[str(self.value)]
-        except KeyError as key:
-            filename = str(self.value)
-            abs = ntpath.abspath(filename)
+        value = str(self.value)
+        if hasattr(self.value, 'abs_path'):
+            filename = os.path.split(self.value.abs_path)[-1]
+            abs_path = self.value.abs_path
+        else:
+            filename = value
+            abs_path = ntpath.abspath(filename)
             if os.name != 'nt':
                 # We're not running on nt, split and join the path
-                abs = os.sep.join(abs.split(ntpath.sep))
+                abs_path = os.sep.join(abs_path.split(ntpath.sep))
+        try:
+            interpreter.parser.scanner = interpreter.parser.scanners[filename]
+        except KeyError as key:
             try:
-                with open(abs, 'rb') as testfile:
+                with open(abs_path, 'rb') as testfile:
                     interpreter.parser.scanner = interpreter.parser.file_scanner_class(
                         filename=filename,
                         filish=testfile,
-                        scanner=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
+                        tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
                         parser=interpreter.parser)
             except IOError, ioe:
-                print "There was a problem loading the file '%s'" % abs
+                print "There was a problem loading the file '%s'" % abs_path
+                raise
         if not running:
             # We don't want to RUN the test, just load it
             interpreter.parser.scanner = interpreter.parser.interactive_scanner
