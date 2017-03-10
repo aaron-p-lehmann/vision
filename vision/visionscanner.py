@@ -315,7 +315,9 @@ class VisionScanner(object):
 
                         self.advance()
             except Exception as e:
-                e.command = getattr(e, 'command', command)
+                command = e.command = getattr(e, 'command', command)
+                if command and command not in token_list:
+                    token_list.insert(0, command)
         return token_list
 
     def advance(self, lines=1):
