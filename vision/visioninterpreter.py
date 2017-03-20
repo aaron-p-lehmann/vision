@@ -2067,16 +2067,14 @@ class VisionInterpreter(object):
         'browser.helperApps.neverAsk.saveToDisk': 'application/csv;application/octet-stream',
     }
 
-    def __init__(self, verbose=False, acceptable_wait=3, maximum_wait=15, default_output_file='', outputters=None, browser_options=None):
+    def __init__(self, verbose=False, default_output_file='', outputters=None, browser_options=None):
         self.setup()
         if not browser_options:
             browser_options = {}
         browser_options['type'] = browser_options.get('type', 'firefox')
         browser_options['remote'] = browser_options.get('remote', None)
         self.step = False
-        self.acceptable_wait = acceptable_wait
         self.interactivity_enabled = True
-        self.maximum_wait = maximum_wait
         self.default_output_file=default_output_file
         self.outputters = outputters or [BasicVisionOutput(self)]
         self.verbose = verbose
@@ -2088,6 +2086,24 @@ class VisionInterpreter(object):
 
     def __iter__(self):
         return self
+
+    @property
+    def acceptable_wait(self):
+        if self.parser.scanner is self.parser.interactive_scanner:
+            # Use the allowable wait for interactive mode
+            return self.parser.interactive_times['allowable_time']
+        else:
+            # Use the allowable wait for normal mode
+            return self.parser.normal_times['allowable_time']
+
+    @property
+    def maximum_wait(self):
+        if self.parser.scanner is self.parser.interactive_scanner:
+            # Use the allowable wait for interactive mode
+            return self.parser.interactive_times['maximum_time']
+        else:
+            # Use the allowable wait for normal mode
+            return self.parser.normal_times['maximum_time']
 
     def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
         maximum_wait = maximum_wait or command.wait
