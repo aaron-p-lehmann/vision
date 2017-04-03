@@ -1186,12 +1186,6 @@ def interpret_switch_to_window(self, interpreter, ele=None, resize=True):
 
     if not new_handle:
         return False
-
-    if resize:
-        size_dir = interpreter.webdriver.get_window_size()
-        if size_dir != {'width': 1024, 'height': 768}:
-            # Need to resize the window
-            interpreter.webdriver.set_window_size(1024, 768)
     return True
 
 def interpret_switch_to_frame(self, interpreter, ele=None):
@@ -2073,6 +2067,7 @@ class VisionInterpreter(object):
             browser_options = {}
         browser_options['type'] = browser_options.get('type', 'firefox')
         browser_options['remote'] = browser_options.get('remote', None)
+        browser_options['resolution'] = browser_options.get('resolution', (1024, 768))
         self.step = False
         self.interactivity_enabled = True
         self.default_output_file=default_output_file
@@ -2213,6 +2208,10 @@ class VisionInterpreter(object):
                         return False
                 finally:
                     command.timing['check_readyState'] = command.timing.get('check_readyState', 0) + time.time() - check_start
+            size_dict = self.webdriver.get_window_size()
+            if (size_dict['width'], size_dict['height']) != self.browser_options['resolution']:
+                print "Vision: %s" % size_dict
+                self.webdriver.set_window_size(*(self.browser_options['resolution']))
             return command.interpret(interpreter=self, ele=ele)
         except UnexpectedAlertPresentException as uape:
             raise
