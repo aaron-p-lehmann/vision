@@ -54,8 +54,9 @@ def case_insensitive(leftside):
 
 # Functions for compiling Nouns
 # Default function for compiling a Noun to Python
-def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predicate="", is_toggle=False, exact_match=False, nots=(), base_axis=None):
+def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predicate="", is_toggle=False, exact_match=False, nots=(), base_axis=None, trusteds=()):
     xpaths = getattr(self, 'xpaths', [])
+    trusteds = list(trusteds) + getattr(self, 'trusteds', [])
     predicate = ""
     if not xpaths:
         if self.value:
@@ -110,7 +111,8 @@ def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predi
                 #previous_row = "normalize-space(ancestor::tr[1]/preceding-sibling::tr[count(td)=1][1])=%s" % val_comp
                 #legend = "normalize-space((ancestor::table/descendant::legend)[1]=%s" % val_comp
                 #predicate = "[ %s ]" % ' or '.join((previous_cell, previous_row, legend))
-                xpaths += [labelled_by_id, labelled_by_containment, same_block_node, same_block]
+                trusteds += [labelled_by_id, labelled_by_containment]
+                xpaths += [same_block_node, same_block]
                 if not is_toggle:
                     xpaths += [previous_cell, previous_row, legend]
             elif compare_type=='value':
@@ -129,48 +131,59 @@ def _compile_noun_to_xpath(self, tag='*', compare_type='label', additional_predi
                 ]
         if not xpaths:
             xpaths += ["./%s::%s%s" % (self.axis, tag, additional_predicate)]
-    return (tuple(xpaths), tuple(nots))
+    if self.parser.interpreter.verbose:
+        print xpaths
+    return (tuple(trusteds), tuple(xpaths), tuple(nots))
 
-def compile_simple_to_xpath(self, tag, nots=(), base_axis="descendant"):
+def compile_simple_to_xpath(self, tag, nots=(), base_axis="descendant", trusteds=()):
     patterns = ('./%s::%s' % (base_axis, tag),)
-    return (tuple(patterns), tuple(nots))
+    return (tuple(trusteds), tuple(patterns), tuple(nots))
 
 def compile_noun_to_xpath(self, *args, **kwargs):
     return map(operator.add,
         _compile_noun_to_xpath(self, exact_match=True, *args, **kwargs),
         _compile_noun_to_xpath(self, exact_match=False, *args, **kwargs))
 
-def compile_button_to_xpath(self, nots=(), base_axis=None):
-    submits, submits_nots = compile_noun_to_xpath(
+def compile_button_to_xpath(self, nots=(), base_axis=None, trusteds=()):
+    submits_trusteds, submits, submits_nots = compile_noun_to_xpath(
         self,
         tag="input[%s='submit']" % case_insensitive('@type'),
         compare_type='value',
         nots=nots,
-        base_axis=base_axis)
-    inp_buttons, inp_buttons_nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    inp_trusteds, inp_buttons, inp_buttons_nots = compile_noun_to_xpath(
         self,
         tag="input[%s='button']" % case_insensitive('@type'),
         compare_type='value',
         nots=nots,
-        base_axis=base_axis)
-    buttons, buttons_nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    buttons_trusteds, buttons, buttons_nots = compile_noun_to_xpath(
         self,
         tag='button',
         compare_type='string',
         nots=nots,
-        base_axis=base_axis)
-    roles, role_nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    trusteds_roles, roles, role_nots = compile_noun_to_xpath(
         self,
         tag="div[@role='button']",
         compare_type='string',
         nots=nots,
-        base_axis=base_axis)
-    buttons_val, buttons_val_nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    buttons_trusteds, buttons_val, buttons_val_nots = compile_noun_to_xpath(
         self,
         tag='button',
         compare_type='value',
         nots=nots,
-        base_axis=base_axis)
+        base_axis=base_axis,
+        trusteds=trusteds)
+    od = collections.OrderedDict()
+    for inp in itertools.chain(*(zip(submits_trusteds, inp_trusteds, buttons_trusteds, trusteds_roles, buttons_trusteds))):
+        od[inp] = True
+    trusteds = od.keys()
     od = collections.OrderedDict()
     for inp in itertools.chain(*(zip(submits, inp_buttons, buttons, roles, buttons_val))):
         od[inp] = True
@@ -179,9 +192,9 @@ def compile_button_to_xpath(self, nots=(), base_axis=None):
     for inp in itertools.chain(*(zip(submits_nots, inp_buttons_nots, buttons_nots, role_nots, buttons_val_nots))):
         od_nots[inp] = True
     nots = od_nots.keys()
-    return (tuple(patterns), tuple(nots))
+    return (tuple(trusteds), tuple(patterns), tuple(nots))
 
-def compile_icon_button_to_xpath(self, type_attr=None, compare_type='title', nots=(), base_axis=None):
+def compile_icon_button_to_xpath(self, type_attr=None, compare_type='title', nots=(), base_axis=None, trusteds=()):
     type_attr = type_attr or self.value
     predicate = ""
     if type_attr:
@@ -189,50 +202,78 @@ def compile_icon_button_to_xpath(self, type_attr=None, compare_type='title', not
             type_attr = (type_attr,)
         predicate = "[ %s ]" % ' or '.join(
             ["@%s='%s'" % (compare_type, t) for t in type_attr])
-    node_xpaths, node_nots = compile_noun_to_xpath(
+    node_xpaths, node_nots, node_trusteds = compile_noun_to_xpath(
         self,
         tag='node()',
         additional_predicate=predicate,
         compare_type=compare_type,
         nots=nots,
+        trusteds=trusteds,
         base_axis=base_axis)
-    return node_xpaths, node_nots
+    return node_xpaths, node_nots, node_trusteds
 
-def compile_textfield_to_xpath(self, nots=(), base_axis=None):
-    texts, nots = compile_noun_to_xpath(
+def compile_icon_button_to_xpath(self, type_attr=None, compare_type='title', nots=(), base_axis=None, trusteds=()):
+    type_attr = type_attr or self.value
+    predicate = ""
+    if type_attr:
+        if not isinstance(type_attr, tuple):
+            type_attr = (type_attr,)
+        predicate = "[ %s ]" % ' or '.join(
+            ["@%s='%s'" % (compare_type, t) for t in type_attr])
+    node_xpaths, node_nots, node_trusteds = compile_noun_to_xpath(
+        self,
+        tag='node()',
+        additional_predicate=predicate,
+        compare_type=compare_type,
+        nots=nots,
+        base_axis=base_axis,
+        trusteds=trusteds)
+    return node_xpaths, node_nots, node_trusteds
+
+def compile_textfield_to_xpath(self, nots=(), base_axis=None, trusteds=()):
+    trusteds_texts, texts, nots = compile_noun_to_xpath(
         self,
         tag="input[(not(@type) or %s='text' or %s='textarea')]" % (
             case_insensitive('@type'),
             case_insensitive('@type')),
         nots=nots,
-        base_axis=base_axis)
-    passwords, nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    trusteds_passwords, passwords, nots = compile_noun_to_xpath(
         self,
         tag="input[%s='password']" % case_insensitive('@type'),
         nots=nots,
-        base_axis=base_axis)
-    emails, nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    trusteds_emails, emails, nots = compile_noun_to_xpath(
         self,
         tag="input[%s='email']" % case_insensitive('@type'),
         nots=nots,
-        base_axis=base_axis)
-    tels, nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    trusteds_tels, tels, nots = compile_noun_to_xpath(
         self,
         tag="input[%s='tel']" % case_insensitive('@type'),
         nots=nots,
-        base_axis=base_axis)
-    files, nots = compile_noun_to_xpath(
+        base_axis=base_axis,
+        trusteds=trusteds)
+    trusteds_files, files, nots = compile_noun_to_xpath(
         self,
         tag="input[%s='file']" % case_insensitive('@type'),
         nots=nots,
-        base_axis=base_axis)
+        base_axis=base_axis,
+        trusteds=trusteds)
+    od = collections.OrderedDict()
+    for inp in itertools.chain(*(zip(trusteds_texts, trusteds_files, trusteds_passwords, trusteds_emails, trusteds_tels))):
+        od[inp] = True
+    trusteds = od.keys()
     od = collections.OrderedDict()
     for inp in itertools.chain(*(zip(texts, files, passwords, emails, tels))):
         od[inp] = True
     patterns = od.keys()
-    return patterns, nots
+    return trusteds, patterns, nots
 
-def compile_image_to_xpath(self, type_attr=None, compare_type='alt', nots=(), base_axis=None):
+def compile_image_to_xpath(self, type_attr=None, compare_type='alt', nots=(), base_axis=None, trusteds=()):
     type_attr = type_attr or self.value
     predicate = ""
     if type_attr:
@@ -246,9 +287,10 @@ def compile_image_to_xpath(self, type_attr=None, compare_type='alt', nots=(), ba
         additional_predicate=predicate,
         compare_type=compare_type,
         nots=nots,
-        base_axis=base_axis)
+        base_axis=base_axis,
+        trusteds=trusteds)
 
-def compile_input_to_xpath(self, type_attr=None, compare_type='label', nots=(), base_axis=None):
+def compile_input_to_xpath(self, type_attr=None, compare_type='label', nots=(), base_axis=None, trusteds=()):
     type_attr = type_attr or self.type
     predicate = ""
     if type_attr:
@@ -262,19 +304,21 @@ def compile_input_to_xpath(self, type_attr=None, compare_type='label', nots=(), 
         additional_predicate=predicate,
         compare_type=compare_type,
         nots=nots,
-        base_axis=base_axis)
+        base_axis=base_axis,
+        trusteds=trusteds)
 
-def compile_row_to_xpath(self, nots=(), base_axis=None):
+def compile_row_to_xpath(self, nots=(), base_axis=None, trusteds=()):
     # The predicates are designed to prevent us from selecting a row
     # that contains a child row that would match this that also has
     # sibling trs.  This should cut down on the mess our ugly nested
     # tables makes.
     base_pattern = "./%s::tr" % (base_axis or self.axis)
-    roles, nots = compile_noun_to_xpath(
+    trusteds, roles, nots = compile_noun_to_xpath(
         self,
         tag="div[@role='row']",
         compare_type='string',
-        nots=nots)
+        nots=nots,
+        trusteds=trusteds)
     xpaths = (base_pattern,) + roles
     if self.value:
         val_comp = self.value.compile()
@@ -293,9 +337,9 @@ def compile_row_to_xpath(self, nots=(), base_axis=None):
             find_inputs_in_cell,
             find_text_in_cell)
         xpaths = (text_row_pattern,) + roles + (input_row_pattern,)
-    return xpaths, nots
+    return trusteds, xpaths, nots
 
-def compile_box_to_xpath(self, nots=(), base_axis=None):
+def compile_box_to_xpath(self, nots=(), base_axis=None, trusteds=()):
     predicate = "[not(%s::fieldset)]" % (base_axis or "descendant")
     if self.value:
         val_comp = self.value.compile()
@@ -306,15 +350,19 @@ def compile_box_to_xpath(self, nots=(), base_axis=None):
             base_axis or "descendant",
             val_comp)
     xpath = "./%s::fieldset%s" % (self.axis, predicate)
-    return (xpath,), nots
+    if self.parser.interpreter.verbose:
+        print xpath
+    return trusteds, (xpath,), nots
 
-def compile_table_to_xpath(self, nots=(), base_axis=None):
+def compile_table_to_xpath(self, nots=(), base_axis=None, trusteds=()):
     predicate = ""
     if self.value:
         val_comp = self.value.compile()
         predicate = "[ contains(normalize-space(ancestor::fieldset/legend), %s) ]" % val_comp
     xpath = "./%s::table%s" % (self.axis, predicate)
-    return (xpath,), nots
+    if self.parser.interpreter.verbose:
+        print xpath
+    return trusteds, (xpath,), nots
 
 def interpret_selenium_command(self, interpreter, ele=None):
     subj = self.subject
@@ -430,7 +478,7 @@ def interpret_checked_check(self, interpreter, ele=None, expected=True):
         expected,
         ele)
 
-def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id=True):
+def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id=True, trusteds=()):
     # Here's a js function to find unique elements in set a that are not
     # in set b
 
@@ -456,13 +504,69 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
             "});\n")
 
         filters = filters or [lambda el, noun: True]
+        trusted = []
         possibles = []
         ordinal = ordinal or noun.ordinal
+        ele = None
 
         locator_info = {}
         found_elements = {}
 
         locating_start = time.time()
+
+        # If there is no ordinal, look for trusted matches
+        if not noun.has_ordinal():
+            def trusted_generator():
+                for xpath in trusteds:
+                    if xpath in locator_info:
+                        # We've already checked this in the loop, skip it
+                        continue
+                    if noun.command.verbose:
+                        print "VERBOSE: XPATH: START: Searching for trusted elements with: %s" % xpath
+                    xpath_start = time.time()
+                    new_possibles = func(xpath)
+                    xpath_end = time.time()
+                    locator_info[xpath] = {
+                        'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
+                        'elements': new_possibles,
+                        'total': (xpath_end - xpath_start)}
+                    if noun.command.verbose:
+                        if new_possibles:
+                            print "VERBOSE: XPATH: SUCCESS: (%f seconds) Found %d possible elements with %s" % (xpath_end - xpath_start, len(new_possibles), xpath)
+                        else:
+                            print "VERBOSE: XPATH: FAILURE: (%f seconds) Unable to find possible elements with %s" % (xpath_end - xpath_start, xpath)
+                    for possible in new_possibles:
+                        possible.locator = xpath
+                        found_elements[possible] = xpath
+                        yield possible
+
+            correct_start = time.time()
+            elements = trusted_generator()
+            for filt in filters:
+                elements = itertools.ifilter(functools.partial(filter_timing, filt=filt, noun=noun), elements)
+
+            ele = None
+            try:
+                # Return first element that we find that can meet the
+                # filters
+                while True:
+                    try:
+                        el = next(elements)
+
+                        if not getattr(noun, 'id', None):
+                            noun.id = None
+                            if replace_id:
+                                try:
+                                    noun.id = el.get_attribute('id')
+                                except WebDriverException, wde:
+                                    pass
+                        noun.element = el
+                        return el
+                    except StaleElementReferenceException as sere:
+                        # if it's stale, we don't want this one
+                        pass
+            except StopIteration as si:
+                pass
 
         # Get all possible matches
         for xpath in finds:
@@ -550,11 +654,87 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                 i += 1
             except StaleElementReferenceException, sere:
                 # If the element is stale, continue on
-                pass
-            except StopIteration, si:
-                # We don't have enough that meet the filter, return None
+
+        if not ele:
+            # Get all possible matches
+            for xpath in finds:
+                if xpath in locator_info:
+                    # We've already checked this in the loop, skip it
+                    continue
+                xpath_start = time.time()
+                new_possibles = []
+                try:
+                    new_possibles = func(xpath)
+                finally:
+                    xpath_end = time.time()
+                    locator_info[xpath] = {
+                        'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
+                        'elements': new_possibles,
+                        'total': (xpath_end - xpath_start)}
+                new_possibles = [el for el in new_possibles if el in set(new_possibles) - set(possibles)]
+                possibles += new_possibles
+                for possible in new_possibles:
+                    found_elements[possible] = xpath
+                    possible.locator = xpath
+
+            if len(possibles) < (ordinal or noun.ordinal):
+                # There are not enough possible matches, fail
                 return None
-        else:
+
+            # Get all elements that we know we DON'T want
+            filter_elements = []
+            filter_dict = {}
+            for xpath in nots:
+                if xpath in filter_dict:
+                    # We've already checked this in the loop, skip it
+                    continue
+                filter_dict[xpath] = True
+                xpath_start = time.time()
+                try:
+                    new_filters = func(xpath)
+                    new_filters = [el for el in new_filters if el in set(new_filters) - set(filter_elements)]
+                    filter_elements += new_filters
+                    for filter_element in new_filters:
+                        found_elements[filter_element] = xpath
+                finally:
+                    xpath_end = time.time()
+                    locator_info[xpath] = locator_info.get(xpath, {
+                        'locator': "%s=%s" % (func.im_func.func_name.rsplit("_", 1)[-1], xpath),
+                        'elements': new_filters,
+                        'total': 0})
+                    locator_info[xpath]['total'] += (xpath_end - xpath_start)
+
+            # 'elements' will have all visible elements that meet our criteria.
+            # It is determined like this:
+            # 1) Get all the elements that match any of the xpaths we're given.
+            # 2) Get all the elements that we know we DON'T want, even if they match the xpaths.
+            # 3) On the browser side, get unique members of 1 that are not members of 2
+            #    We do this on the browser side because it saves us expensive
+            #    round trips comparing WebElements for identity
+            # 4) run the result of 3 through any filters provided, in order.
+            #    This is done lazily, because the filters might be expensive,
+            #    performance-wise
+            elements = (el for el in noun.parser.interpreter.webdriver.execute_script(js_func, possibles, filter_elements))
+            for filt in filters:
+                elements = itertools.ifilter(functools.partial(filter_timing, filt=filt, noun=noun), elements)
+
+            i = 0
+            el = None
+
+            # Look at elements until we find one that meets criteria or we run
+            # out.  Ignore stale elements
+            while i < ordinal:
+                try:
+                    ele = next(elements)
+                    i += 1
+                except StaleElementReferenceException, sere:
+                    # If the element is stale, continue on
+                    pass
+                except StopIteration, si:
+                    # We don't have enough that meet the filter, return None
+                    return None
+
+        if ele:
             # We found a match!  Yay!
             el = ele
             for element, locator in found_elements.items():
@@ -607,7 +787,7 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
             finds=[self.id],
             nots=())
     else:
-        xpaths, nots = self.compile()
+        trusted, xpaths, nots = self.compile()
         requesting_command.timing[self]['locator'] = 'xpath=%s' % xpath
         locator = functools.partial(
             locator_func,
@@ -615,7 +795,8 @@ def interpret_noun(self, interpreter, context_element=None, requesting_command=N
             noun=self,
             func=context_element.find_elements_by_xpath,
             finds=xpaths,
-            nots=nots)
+            nots=nots,
+            trusteds=trusted)
     try:
         el = locator()
         if el:
@@ -783,26 +964,28 @@ def interpret_authenticate(self, interpreter, ele):
     return True
 
 def interpret_capture(self, interpreter, ele):
+    location = getattr(ele, 'location', {'x': 0, 'y': 0})
+    scrollY = location['y']
     if ele:
         if hasattr(ele, 'noun') and not getattr(ele.noun, 'hover_on_capture', None):
             try:
-                selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(el, -1, -1)
+                selenium.webdriver.common.action_chains.ActionChains(interpreter.webdriver).move_to_element_with_offset(ele, -1, -1)
             except:
                 pass
-        else:
-            # Not sure why we're sleeping.  Maybe time for any onout JS to run?
-            import time
-            time.sleep(1)
-    image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64())))
+
+    interpreter.webdriver.execute_script(
+        "window.scrollTo(0, arguments[0]);", scrollY)
+
+    image = Image.open(StringIO.StringIO(base64.decodestring(interpreter.webdriver.get_screenshot_as_base64()))).convert('RGB')
 
     if isinstance(ele, selenium.webdriver.remote.webdriver.WebElement) and ele.tag_name.lower() != 'html':
-        location = ele.location
+        top = location['y'] - interpreter.webdriver.execute_script("return window.scrollY;")
         size = ele.size
         coordinates = {
             'left': location['x'],
-            'top': location['y'],
+            'top': top,
             'right': location['x'] + size['width'],
-            'bottom': location['y'] + size['height']}
+            'bottom': top + size['height']}
 
         # crop and save the picture
         image=image.crop([coordinates[side] for side in ['left', 'top', 'right', 'bottom']])
@@ -893,13 +1076,13 @@ def interpret_load_test(self, interpreter, ele, running=True):
                         filename=filename,
                         filish=testfile,
                         tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
-                        parser=interpreter.parser,
-                        **interpreter.parser.normal_times)
+                        parser=interpreter.parser)
             except IOError, ioe:
-                interpreter.parser.scanner = interpreter.parser.file_scanner_class(
-                    filename=filename,
-                    tokenizer=visionscanner.BasicTokenizer(commandtype=visionparser.InterpreterCommand),
-                    parser=interpreter.parser)
+                print "There was a problem loading the file '%s'" % abs_path
+                raise
+        if not running:
+            # We don't want to RUN the test, just load it
+            interpreter.parser.scanner = interpreter.parser.interactive_scanner
     else:
         # We were not given a value, use the latest file_tokenizer
         interpreter.parser.scanner = interpreter.parser.file_scanner
@@ -1207,12 +1390,6 @@ def interpret_switch_to_window(self, interpreter, ele=None, resize=True):
 
     if not new_handle:
         return False
-
-    if resize:
-        size_dir = interpreter.webdriver.get_window_size()
-        if size_dir != {'width': 1024, 'height': 768}:
-            # Need to resize the window
-            interpreter.webdriver.set_window_size(1024, 768)
     return True
 
 def interpret_switch_to_frame(self, interpreter, ele=None):
@@ -1611,17 +1788,27 @@ class InteractiveParser(visionparser.VisionParser):
     subcommand_scanner_name = '<subcommand>'
     interactive_scanner_name = '<interactive>'
 
-    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveVisionScanner, file_scanner_class=visionscanner.VisionFileScanner, interactive_maximum_time=5, interactive_allowable_time=1, maximum_time=15, allowable_time=3, interpreter=None):
+    def __init__(self, scanners=None, interactive_scanner_class=visionscanner.InteractiveVisionScanner, file_scanner_class=visionscanner.VisionFileScanner, interpreter=None, maximum_wait=15, allowable_time=3, interactive_maximum_time=5, interactive_allowable_time=3):
         self.interactive_scanner_class=interactive_scanner_class
         self.file_scanner_class=file_scanner_class
         self.interpreter=interpreter
-        interpreter.parser=self
+        if interpreter:
+            interpreter.parser=self
         self.interactive_times = {
             'maximum_time': interactive_maximum_time,
             'allowable_time': interactive_allowable_time }
         self.normal_times = {
             'maximum_time': maximum_time,
             'allowable_time': allowable_time }
+
+        self.interactive_times = {
+            'maximum_time': interactive_maximum_time,
+            'allowable_time': interactive_allowable_time
+        }
+        self.normal_times = {
+            'maximum_time': maximum_wait,
+            'allowable_time': allowable_time
+        }
 
         scanners = scanners if scanners else []
 
@@ -2174,7 +2361,7 @@ class VisionInterpreter(object):
         if not webdriver:
             if not browser_options:
                 browser_options = {}
-            browser_options['type'] = browser_options.get('type', 'firefox')
+            browser_options['type'] = browser_options.get('type', 'chrome')
             browser_options['remote'] = browser_options.get('remote', None)
         else:
             self.webdriver = webdriver
@@ -2202,6 +2389,24 @@ class VisionInterpreter(object):
 
     def __iter__(self):
         return self
+
+    @property
+    def acceptable_wait(self):
+        if self.parser.scanner is self.parser.interactive_scanner:
+            # Use the allowable wait for interactive mode
+            return self.parser.interactive_times['allowable_time']
+        else:
+            # Use the allowable wait for normal mode
+            return self.parser.normal_times['allowable_time']
+
+    @property
+    def maximum_wait(self):
+        if self.parser.scanner is self.parser.interactive_scanner:
+            # Use the allowable wait for interactive mode
+            return self.parser.interactive_times['maximum_time']
+        else:
+            # Use the allowable wait for normal mode
+            return self.parser.normal_times['maximum_time']
 
     def locate(self, function, command, acceptable_wait=None, maximum_wait=None, expected=True):
         maximum_wait = maximum_wait or command.wait
@@ -2327,6 +2532,10 @@ class VisionInterpreter(object):
             command_start = time.time()
             ret = False
             try:
+                size_dict = self.webdriver.get_window_size()
+                if (size_dict['width'], size_dict['height']) != self.browser_options['resolution']:
+                    print "Vision: %s" % size_dict
+                    self.webdriver.set_window_size(*(self.browser_options['resolution']))
                 if command.verbose:
                     print "VERBOSE: COMMAND: START: Starting to interpret %s" % command.code
                 ret = command.interpret(interpreter=self, ele=ele)
@@ -2434,7 +2643,7 @@ class VisionInterpreter(object):
                     if command.check_readyState:
                         warning['subwarnings'].append(
                             "Time spent waiting for the page to be ready: %f seconds" % (
-                                command.timing['check_readyState']))
+                                command.timing.get('check_readyState', 0)))
                     if command.uses_elements and command.subject:
                         for noun in command.subject.nouns:
                             if noun in command.timing:
@@ -2657,10 +2866,6 @@ class VisionInterpreter(object):
             viewport_location = parent_el.location if parent_el else {'x': 0, 'y': 0}
             middle = [el.location['x'] + el.size['width'] / 2 - viewport_location['x'], el.location['y'] + el.size['height'] / 2 - viewport_location['y']]
             points = [max(0, middle[0] - viewport['width'] / 2), max(0, middle[1] - viewport['height'] / 2)]
-            if 0 < middle[0] < viewport['width']:
-                # we don't want to scroll horizontally if we don't have
-                # to
-                points[0] = 0
             self.scroll(
                 x=points[0] if horizontal else self.webdriver.execute_script("return arguments[0].scrollLeft;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollX;"),
                 y=points[1] if vertical else self.webdriver.execute_script("return arguments[0].scrollTop;", parent_el) if parent_el else self.webdriver.execute_script("return window.scrollY;"),

@@ -760,6 +760,9 @@ class Noun(FilteredValueObject):
         self.use_parent_context_for_interpretation = scanner_args.get('use_parent_context_for_interpretation', True)
         self.window_handle = None
 
+    def has_ordinal(self):
+        return bool([tok for tok in self.children if isinstance(tok, Ordinal)])
+
     @property
     def cached(self):
         if getattr(self, 'element', None):
@@ -898,7 +901,7 @@ class AttributeNoun(Noun):
         xpath = self.means
         if self.method != 'xpath':
             xpath = "./descendant::node()[@%s='%s']" % (self.method, self.means)
-        return (xpath,), ()
+        return (), (xpath,), ()
 
 class Context(ValueObject):
     """
