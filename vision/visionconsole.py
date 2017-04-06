@@ -247,7 +247,11 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
             parser.scanner=parser.subcommand_scanner
         interpreter.run()
     finally:
-        interpreter._webdriver.quit()
+        try:
+            interpreter._webdriver.quit()
+        except:
+            # If this fails, there was nothing we could do anyway.
+            pass
         interpreter.quit()
 
 if __name__ == "__main__":
