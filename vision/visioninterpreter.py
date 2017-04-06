@@ -654,6 +654,7 @@ def locator_func(noun, func, finds, nots, filters=None, ordinal=None, replace_id
                 i += 1
             except StaleElementReferenceException, sere:
                 # If the element is stale, continue on
+                pass
 
         if not ele:
             # Get all possible matches
@@ -1798,7 +1799,7 @@ class InteractiveParser(visionparser.VisionParser):
             'maximum_time': interactive_maximum_time,
             'allowable_time': interactive_allowable_time }
         self.normal_times = {
-            'maximum_time': maximum_time,
+            'maximum_time': maximum_wait,
             'allowable_time': allowable_time }
 
         self.interactive_times = {
@@ -2372,7 +2373,8 @@ class VisionInterpreter(object):
         self.verbose = verbose
         self.errorfound = False
         self._handle = None
-        self.browser_options = browser_options
+        self.browser_options = browser_options or {}
+        self.browser_options['resolution'] = self.browser_options.get('resolution', (1024, 768))
         self.base_url=base_url
         self.tests_dir = tests_dir
         self.screenshot_dir = screenshot_dir

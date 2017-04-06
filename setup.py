@@ -8,12 +8,12 @@ reqs = {
 
 setup(
     name='vision',
-    version='0.11.12',
+    version='0.11.13',
     packages=find_packages(),
 
     # This requires selenium
     install_requires = [
-        'selenium',
+        'selenium==2.53.6',
         'pillow'] + reqs.get(platform.system(), []),
 
     # PyPI data

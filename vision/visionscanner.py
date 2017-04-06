@@ -329,7 +329,8 @@ class VisionScanner(object):
         return token_list
 
     def advance(self, lines=1):
-        self.position += lines
+        if not self.done:
+            self.position += lines
 
     def token_match_action(self, token, scanned_line):
         # This is a hook for other scanners
@@ -337,7 +338,7 @@ class VisionScanner(object):
 
     @property
     def done(self):
-        return self.position == len(self.lines)
+        return self.position >= len(self.lines)
 
 class VisionFileScanner(VisionScanner):
     """
@@ -367,6 +368,23 @@ class VisionFileScanner(VisionScanner):
             *args,
             **kwargs)
         self.addline(filish)
+
+    def next(self):
+        command = None
+        exception = None
+        try:
+            command = super(VisionFileScanner, self).next()
+            return command
+        except StopIteration as si:
+            exception = si
+            raise
+        except Exception as e:
+            import traceback;traceback.print_exc()
+            exception = e
+            raise
+        finally:
+            if not (isinstance(exception, StopIteration) or (getattr(command, 'error', None) and not self.parser.interpreter.interactivity_enabled)):
+                self.advance()
 
     def get_regexps(self):
         regexps = super(VisionFileScanner, self).get_regexps()
@@ -441,9 +459,10 @@ class VisionFileScanner(VisionScanner):
         return line
 
     def advance(self, lines=1, honor_breakpoints=True):
-        for x in range(lines):
-            self.lines[self.position]['breakpoint'] = False
-            self.position += 1
+        if not self.done:
+            for x in range(lines):
+                self.lines[self.position]['breakpoint'] = False
+                self.position += 1
 
     def rewind(self, lines=1):
         self.position -= lines
@@ -591,6 +610,7 @@ class InteractiveVisionScanner(VisionScanner):
                 raise
         finally:
             readline.write_history_file(os.path.expanduser("~/.vision_history"))
+            self.advance()
         return tokens
 
     @property

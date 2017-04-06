@@ -150,103 +150,104 @@ def main(interpreter_type=visioninterpreter.VisionInterpreter, parser_type=visio
         interpreter=interpreter,
         interactive_maximum_time=arguments.interactive_maximum_time,
         interactive_allowable_time=arguments.interactive_warning_time,
-        maximum_time=arguments.maximum_time,
+        maximum_wait=arguments.maximum_time,
         allowable_time=arguments.warning_time)
 
     try:
-        # Try to make the webdriver, and catch failures with a vague
-        # message, then exit.  Later, we'll figure out how to make the
-        # message more informative.
-        found_node = False
-        while not found_node:
-            try:
-                if arguments.remote:
-                    print (
-                        "Starting a driver on a remote node.  If we "
-                        "can't connect to the address you gave (%s), we'll "
-                        "wait indefinitely for one to be available there") % arguments.remote
-                interpreter.webdriver.set_window_size(1024, 768)
-                found_node = True
-            except selenium.common.exceptions.WebDriverException as wde:
-                timeout_msg = "Error forwarding the new session"
-                if arguments.remote and timeout_msg in str(wde):
-                    # if we failed due to timeout 
-                    # sleep for 5 seconds, then try again
-                    time.sleep(5)
-                else:
-                    # It's some other kind of exception, raise it
-                    raise
-    except Exception as e:
-        msg = ("Something went wrong with setting up the Selenium "
-            "webdriver.  Make sure you have the right version of the browser "
-            "you chose (%s), and the driver program (%s).") % (
-                arguments.browser, {
-                    "chrome": "chromedriver",
-                    "firefox": "geckodriver",
-                    "internetexplorer": "iedriver"})
-        if arguments.debug:
-            print msg
-            raise
-        else:
-            sys.exit(msg)
+        try:
+            # Try to make the webdriver, and catch failures with a vague
+            # message, then exit.  Later, we'll figure out how to make the
+            # message more informative.
+            found_node = False
+            while not found_node:
+                try:
+                    if arguments.remote:
+                        print (
+                            "Starting a driver on a remote node.  If we "
+                            "can't connect to the address you gave (%s), we'll "
+                            "wait indefinitely for one to be available there") % arguments.remote
+                    interpreter.webdriver.set_window_size(1024, 768)
+                    found_node = True
+                except selenium.common.exceptions.WebDriverException as wde:
+                    timeout_msg = "Error forwarding the new session"
+                    if arguments.remote and timeout_msg in str(wde):
+                        # if we failed due to timeout 
+                        # sleep for 5 seconds, then try again
+                        time.sleep(5)
+                    else:
+                        # It's some other kind of exception, raise it
+                        raise
+        except Exception as e:
+            msg = ("Something went wrong with setting up the Selenium "
+                "webdriver.  Make sure you have the right version of the browser "
+                "you chose (%s), and the driver program (%s).") % (
+                    arguments.browser, {
+                        "chrome": "chromedriver",
+                        "firefox": "geckodriver",
+                        "internetexplorer": "iedriver"})
+            if arguments.debug:
+                print msg
+                raise
+            else:
+                sys.exit(msg)
 
-    if arguments.setup_test:
-        # there are tests to be run as part of the set up.  Run them,
-        # then get a new parser, because we don't want to be saving
-        # thier stuff
+        if arguments.setup_test:
+            # there are tests to be run as part of the set up.  Run them,
+            # then get a new parser, because we don't want to be saving
+            # thier stuff
+            if arguments.start_url:
+                parser.subcommand_scanner.addline([
+                    'Navigate to "%s"' % arguments.start_url])
+            parser.interactive_scanner.addline([
+                'Load test "%s"' % test for test in reversed(arguments.setup_test)] + [
+                'Finish'])
+            parser.scanner=parser.subcommand_scanner
+            # interpreter.interactivity_enabled=False
+            try:
+                interpreter.handle_commands()
+            except:
+                # Catch everything
+                pass
+            finally:
+                # Go back to defaulting to being interactive
+                interpreter.interactivity_enabled = True
+            parser=parser_type(
+                interpreter=interpreter,
+                interactive_maximum_time=arguments.interactive_maximum_time,
+                interactive_allowable_time=arguments.interactive_warning_time,
+                maximum_wait=arguments.maximum_time,
+                allowable_time=arguments.warning_time)
+
+        parser.interactive_scanner.addline([
+            'Load test "%s"' % test for test in reversed(arguments.testfiles)])
+        if arguments.testfiles:
+            if getattr(arguments, 'breakpoint', None):
+                # Make sure every breakpoint has a filename.  If none was
+                # provided, then use the most recent file
+                breakpoints_dict = {}
+                for breakpoint in arguments.breakpoint:
+                    filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
+                    filename = filename if filename.endswith(".vision") else filename + ".vision"
+                    breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
+                    breakpoints_dict[filename].update([breakpoint])
+
+                # Now add the commands to add the breakpoints.
+                for filename, breakpoints in breakpoints_dict.items():
+                    parser.interactive_scanner.addline([
+                        'Break "%s"' % ":".join([filename, breakpoint]) for
+                        breakpoint in breakpoints])
+            else:
+                # There are no breakpoints, add a finish to the scanner
+                # the test will run to completion
+                parser.interactive_scanner.addline(["Finish"])
+
         if arguments.start_url:
             parser.subcommand_scanner.addline([
                 'Navigate to "%s"' % arguments.start_url])
-        parser.interactive_scanner.addline([
-            'Load test "%s"' % test for test in reversed(arguments.setup_test)] + [
-            'Finish'])
-        parser.scanner=parser.subcommand_scanner
-        # interpreter.interactivity_enabled=False
-        try:
-            interpreter.handle_commands()
-        except:
-            # Catch everything
-            pass
-        finally:
-            # Go back to defaulting to being interactive
-            interpreter.interactivity_enabled = True
-        parser=parser_type(
-            interpreter=interpreter,
-            interactive_maximum_time=arguments.interactive_maximum_time,
-            interactive_allowable_time=arguments.interactive_warning_time,
-            maximum_time=arguments.maximum_time,
-            allowable_time=arguments.warning_time)
-
-    parser.interactive_scanner.addline([
-        'Load test "%s"' % test for test in reversed(arguments.testfiles)])
-    if arguments.testfiles:
-        if getattr(arguments, 'breakpoint', None):
-            # Make sure every breakpoint has a filename.  If none was
-            # provided, then use the most recent file
-            breakpoints_dict = {}
-            for breakpoint in arguments.breakpoint:
-                filename, breakpoint = breakpoint.split(':', 1) if len(breakpoint.split(':', 1)) > 1 else (arguments.testfiles[0], breakpoint)
-                filename = filename if filename.endswith(".vision") else filename + ".vision"
-                breakpoints_dict[filename] = breakpoints_dict.get(filename, set([]))
-                breakpoints_dict[filename].update([breakpoint])
-
-            # Now add the commands to add the breakpoints.
-            for filename, breakpoints in breakpoints_dict.items():
-                parser.interactive_scanner.addline([
-                    'Break "%s"' % ":".join([filename, breakpoint]) for
-                    breakpoint in breakpoints])
-        else:
-            # There are no breakpoints, add a finish to the scanner
-            # the test will run to completion
-            parser.interactive_scanner.addline(["Finish"])
-
-    if arguments.start_url:
-        parser.subcommand_scanner.addline([
-            'Navigate to "%s"' % arguments.start_url])
-        parser.scanner=parser.subcommand_scanner
-    try:
+            parser.scanner=parser.subcommand_scanner
         interpreter.run()
     finally:
+        interpreter._webdriver.quit()
         interpreter.quit()
 
 if __name__ == "__main__":
