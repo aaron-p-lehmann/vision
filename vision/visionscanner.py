@@ -319,8 +319,10 @@ class VisionScanner(object):
                     # We have a string, tokenize it
                     token_list = self.scanline(line, self.position)
                     command = token_list[0]
+                else:
+                    self.advance()
             except StopIteration as si:
-                exception = si
+                si.command = command
                 raise
             except Exception as e:
                 command = e.command = getattr(e, 'command', command)
@@ -415,7 +417,8 @@ class VisionFileScanner(VisionScanner):
             raise visionexceptions.GarbageInputError(
                 code=line,
                 start=0,
-                message="Too many indents on line")
+                message="Too many indents on line",
+                command=command)
 
         # Filter out any remaining ScopeChanges
         tokens = [t for t in tokens if not isinstance(t, visionparser.ScopeChange)]

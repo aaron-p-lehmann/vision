@@ -480,18 +480,27 @@ class FileLiteral(Literal):
         if not self.file_content:
             if self.command.error:
                 # There's an error here, don't do any opening, just
-                # return the identifier
+                # get file data and return the identifier
+                try:
+                    self.get_filedata(
+                        path=self.directory,
+                        file_type="upload")
+                except:
+                    # For some reason we couldn't get the file data, but
+                    # since we've already gotten an error, we don't want
+                    # to do anything about it, so swallow
+                    pass
                 return self.identifier
-
-            self.open_file(
-                path=self.directory,
-                file_type="upload")
+            else:
+                self.open_file(
+                    path=self.directory,
+                    file_type="upload")
         return self.file_content or ""
 
     def _compile(self, *args, **kwargs):
         return "'%s'" % self
 
-    def open_file(self, path, file_type):
+    def get_filedata(self, path, file_type):
         import os.path
         self.directory = path or self.command.parser.interpreter.upload_dir
         self.file_type = file_type
@@ -499,6 +508,9 @@ class FileLiteral(Literal):
         self.abs_path = os.path.join(
             self.directory,
             filename)
+
+    def open_file(self, path, file_type):
+        self.get_filedata(path, file_type)
         try:
             content = ""
             if self.command.parser.interpreter.upload_dir:
