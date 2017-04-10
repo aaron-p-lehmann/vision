@@ -7,6 +7,7 @@ import types
 import copy
 import visionexceptions
 import time
+import os
 
 # Selenium libraries
 # Try local first, fallback to one dir above

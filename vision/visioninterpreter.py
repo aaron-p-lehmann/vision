@@ -1599,6 +1599,7 @@ def command_action(self):
             raise visionexceptions.UnmetTokenRequirements(
                 parser=self,
                 token=self,
+                tokenstream=self.tokenstream,
                 message="'Navigate' requires either a URL or a link")
     return added_tokens
 
